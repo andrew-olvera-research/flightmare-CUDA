@@ -147,7 +147,7 @@ def execute(profile, runner):
     elif profile == 'sanitize':
         runner.run('memcheck', ['compute-sanitizer', '--tool', 'memcheck',
                                '--error-exitcode', '1',
-                               '/build/flightlib-cuda-contracts/contracts_device_test'])
+                               '/build/flightlib-cuda-contracts/runtime_test'])
 
 
 def main():

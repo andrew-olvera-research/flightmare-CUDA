@@ -71,7 +71,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | --- | --- |
 | CPU parity suite | verify: rejection, clamps, motors, integration, bounds, rewards, reset routing |
 | Host contract test | fast: multi-slot indexing, 64-bit offsets, overflow rejection, const reads |
-| GPU contract test | fast: real device pointers/indexing, guarded tail lanes |
+| GPU runtime test | fast: device storage/indexing, binding rejection, stream/lifetime safety, no-copy/allocation launch checks; supersedes standalone device contract test |
 | Python smoke | verify: native loading, binding layouts, actual state advancement |
 | Upstream logging/Eigen demonstrations | legacy only; printing logs/versions is not a behavioral assertion |
 | CUDA installation smoke | doctor only; routine device contracts already prove kernel launch |

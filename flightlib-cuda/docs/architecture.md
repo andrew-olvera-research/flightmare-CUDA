@@ -2,8 +2,8 @@
 
 Status: version 1 data contract frozen for implementation. Kernel partitioning
 below is the initial design and may change through profiling without changing
-the contract. The package currently implements descriptors and contract tests;
-it does not yet allocate a simulation, integrate dynamics, or execute queries.
+the contract. CUDA-2 implements persistent storage, binding validation, stream
+ordering, and ownership. It does not yet integrate dynamics or execute queries.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -37,7 +37,7 @@ flowchart TD
 
 CPU work is configuration, shape validation, parameter preparation, resource
 creation, and asynchronous launch orchestration. Device memory is authoritative
-after upload. A future Simulation owner holds allocations and streams;
+after upload. The Simulation owner holds allocations and streams;
 descriptors are cheap non-owning views, not per-drone objects. No Eigen, Torch,
 Warp, CUDA runtime, or renderer dependency is required to include the contracts.
 
@@ -347,10 +347,138 @@ speedup is justified by this contract-only implementation.
    supported geometry before implementing candidate/narrow-phase processing.
 6. Add framework/renderer adapters with measured copy and synchronization budgets.
 
-Contract tests currently verify layout, stable lane mapping, index overflow,
-read-only access, and actual CUDA compilation/device indexing. Dynamics parity,
-query correctness, allocations, interop, and performance gates become runnable
-as their implementations arrive.
+Contract/runtime tests verify layout, stable lane mapping, index overflow,
+read-only access, actual CUDA indexing, storage/lifetime, external binding
+validation, and stream ordering. Dynamics parity, framework interop, and query
+correctness become runnable as their implementations arrive.
+
+## CUDA 2 implementation completed
+
+Tracking: [CUDA-2](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/2).
+The initial contract/devops baseline was committed as `580371d`. The frozen
+`contracts.hpp` remains unchanged by this layer. Runtime declarations are in
+[runtime.hpp](../include/flightlib_cuda/runtime.hpp); implementation is in
+[runtime.cu](../src/runtime.cu).
+
+### Storage and configuration
+
+Simulation::plan is a CPU-only planning operation. RuntimeConfig specifies E/A,
+model capacity, schedule length, instance/ray/candidate capacities, device,
+initial seed, and an optional byte budget. All products/sums are checked before
+allocation. Every declared contract buffer is planned from one layout registry,
+including optional geometry transport buffers but no geometry backend storage.
+There is one cudaMalloc arena, with each nonempty tensor starting at a 256-byte
+offset. Tensors remain densely packed internally; padding is between buffers.
+AllocationPlan exposes payload and arena bytes plus per-buffer categories.
+CUDA context/stream/event overhead is not included in the arena byte report.
+
+The constructor validates capacity/device/free memory, creates an owned
+nonblocking stream and reusable completion event, and initializes the arena
+asynchronously. Constructor failure unwinds resources without modifying another
+simulation. Plan/free-memory checks do not guarantee allocation success under
+concurrent memory pressure; cudaMalloc failures are also reported and unwound.
+
+All lanes start inactive with finite neutral state, identity quaternion, zero
+motors/counters, Invalid accepted commands, and Inactive diagnostics. Explicit
+reset storage also starts with identity quaternions. Query outputs start with
+Inactive status, infinite distance, zero normals, and invalid IDs. Owners/assets
+use invalid sentinels and poses use identity quaternions. Model parameters,
+bounds, task parameters, and schedule durations are zero placeholders, not
+validated physical models; CUDA-3 must prepare them before activating dynamics.
+Per-lane random keys are initialized deterministically; no RNG sampler exists
+yet. Optional zero-element tensors have null pointers and their declared shapes.
+
+### Lifetime and launch boundary
+
+Simulation is a copyable shared owner of one arena, not a deep state clone.
+Copy the handle when retaining storage. RuntimeViews are raw borrowed descriptors
+and do not retain memory themselves. A BoundInputs-style registration is named
+Bindings in the implementation; it also retains the simulation owner.
+
+enqueue invokes a trusted C++ launch callback on the owned stream. enqueueOn
+accepts an explicit nonblocking stream on the same device. Every submitted use
+waits for the preceding completion event, invokes the callback, and records
+completion again. This serializes producer, simulation, and consumer work even
+when they use different streams. The reusable event requires no per-call
+allocation. Host submission uses try-lock rejection, never a wait for a concurrent
+submission. Successive asynchronous calls may queue before earlier GPU work
+finishes; concurrently entering the same owner is rejected.
+
+Callbacks must enqueue only on the provided stream and may not recursively
+submit, synchronize, allocate, or let work escape to another stream. Context is
+consumed synchronously by the callback; any device-visible pointers must remain
+valid through completion. Operation-specific shape/value checks remain the job
+of later typed operation wrappers. This is a low-level launch facility, not an
+unchecked public physics step. Explicit setup uploads may use buffer(name)
+inside an ordered callback; direct unsynchronized writes to borrowed storage
+violate the ownership contract.
+
+synchronize is an explicit completion/error boundary. Final-owner destruction
+drains the completion event and owned stream before freeing buffers, events,
+streams, or retained external owners. Destructors cannot throw and report CUDA
+completion errors to stderr; callers needing error handling use synchronize.
+Callbacks that fail after submitting work poison the simulation; subsequent
+launches fail, and teardown still drains the queued work. There is no promised
+rollback of arbitrary callback writes. Asynchronous device failures surface at
+a completion/API boundary. Caller device selection is restored on return.
+
+### External bindings
+
+bind validates metadata and CUDA allocation ranges once before repeated launch.
+It accepts dense rank 1..3 tensors with explicit dtype and expected shape, checks
+alignment, device identity, and allocation extent, and rejects all overlap with
+the runtime arena or other external bindings. Host and managed memory, null
+nonempty inputs, non-dense layouts, foreign-device memory, and opaque allocations
+whose address range cannot be verified are rejected. Registration never copies
+or repairs inputs. Empty bindings require null data. cudaMalloc allocations and
+compatible driver-queryable allocations are the initial supported storage.
+
+Expected specs come from trusted operation wrappers; the generic validator
+cannot infer an arbitrary kernel's expected inputs. Bindings from one simulation
+cannot be submitted to another. A supplied shared allocation owner is retained
+until final simulation teardown, even if the temporary Bindings token is dropped
+after submission. Without that owner, the caller must retain the allocation
+through all submitted work. There is no unregister/rebind-to-freed-memory API
+in this layer; graph/framework lifetime integration follows in CUDA-6.
+
+### Validation and measured limits
+
+The runtime test replaces the old standalone device-contract launch test; the
+host-only contract test remains. Tests cover 3 environments x 11 slots, inactive
+tail lanes, neutral initialization, all-buffer layout/nonoverlap, shape/dtype/
+stride/extent/alias rejection, budget/overflow/insufficient-memory failures,
+multi-stream producer/consumer ordering, retained owners, concurrent-entry
+rejection, callback failure, and teardown. Cross-GPU rejection runs only on a
+multi-GPU host; this development machine has one GPU, so that case is explicitly
+reported as unexercised. Invalid device ordinal rejection is exercised.
+
+For the test configuration E=3, A=11, P=2, S=3, I=4, Q=5, K=7, the arena uses
+32,545 bytes: 19,523 payload and 13,022 alignment padding. Physical state is
+4,488 bytes (136 bytes per lane). The relatively large padding fraction is a
+small-batch cost; report it rather than treating every arena byte as state.
+
+Linux link-time CUDA API instrumentation measured 128 warmed submissions with
+zero application allocations, frees, copies, or host synchronizations. An
+Nsight Systems capture independently showed 128 kernel launches, event waits,
+and event records, no GPU memory-transfer activity, and one explicit completion
+synchronization after the loop. This is launch-path evidence, not a dynamics
+benchmark or a speedup claim. Driver-internal memory is outside the wrapper
+counters. Reproduce the optional capture after building with:
+
+```sh
+nsys profile --trace=cuda --sample=none --cpuctxsw=none \
+  --capture-range=cudaProfilerApi --capture-range-end=stop \
+  --output=/workspace/.local-ci/cuda-2-runtime \
+  /build/flightlib-cuda-contracts/runtime_test --profile
+```
+
+Local fast/verify cover the runtime. Compute Sanitizer targets runtime_test but
+remains blocked by the host WDDM debugger interface; that is not a sanitizer
+pass. CUDA graph capture is explicitly rejected until CUDA-6 implements its
+different lifetime semantics. External consumers must submit through enqueueOn
+to participate in the completion chain. Torch bindings, physics stepping,
+state/command lifecycle operations, geometry algorithms, and graph execution
+are not implemented in CUDA-2.
 
 ## Legacy source anchors
 
