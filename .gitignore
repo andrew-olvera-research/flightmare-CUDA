@@ -28,6 +28,7 @@ Testing/
 
 # Local Compose configuration
 /.env
+/.local-ci/
 
 
 # Gitignore

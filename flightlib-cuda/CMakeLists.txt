@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.24)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" FLIGHTMARE_VERSION LIMIT_COUNT 1)
+project(flightlib_cuda VERSION ${FLIGHTMARE_VERSION} LANGUAGES CXX)
+
+add_library(flightlib_cuda_contracts INTERFACE)
+add_library(flightlib_cuda::contracts ALIAS flightlib_cuda_contracts)
+target_include_directories(flightlib_cuda_contracts INTERFACE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+target_compile_features(flightlib_cuda_contracts INTERFACE cxx_std_17)
+
+include(CTest)
+option(FLIGHTLIB_CUDA_TEST_DEVICE "Compile and exercise contracts with CUDA" OFF)
+if(BUILD_TESTING)
+  add_executable(contracts_test tests/contracts_test.cpp)
+  target_link_libraries(contracts_test PRIVATE flightlib_cuda::contracts)
+  add_test(NAME flightlib_cuda.contracts COMMAND contracts_test)
+  if(FLIGHTLIB_CUDA_TEST_DEVICE)
+    enable_language(CUDA)
+    add_executable(contracts_device_test tests/contracts_device_test.cu)
+    target_link_libraries(contracts_device_test PRIVATE flightlib_cuda::contracts)
+    set_target_properties(contracts_device_test PROPERTIES
+      CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON)
+    add_test(NAME flightlib_cuda.contracts_device COMMAND contracts_device_test)
+  endif()
+endif()

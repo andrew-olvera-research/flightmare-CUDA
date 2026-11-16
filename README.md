@@ -1,6 +1,5 @@
 # Flightmare - 左青龙
 
-![Build Status](https://github.com/uzh-rpg/flightmare/workflows/CPP_CI/badge.svg) ![clang format](https://github.com/uzh-rpg/flightmare/workflows/clang_format/badge.svg)
 ![License](https://img.shields.io/badge/License-MIT-blue.svg) ![website]( https://img.shields.io/website-up-down-green-red/https/naereen.github.io.svg)
 
 **Flightmare** is a flexible modular quadrotor simulator.
@@ -19,6 +18,16 @@ Installation instructions can be found in our [Wiki](https://github.com/uzh-rpg/
 
 ## CUDA development
 
+The rewrite baseline is **v0.1.0**. Use `./scripts/check.ps1 fast` during
+development and `./scripts/check.ps1 verify` before checkpoints. See
+[local validation and versioning](docs/local-development.md) for test selection,
+saved reports, oracle protection, and local release tags. No cloud CI is used.
+
+The new [flightlib-cuda package](flightlib-cuda/README.md) starts with frozen
+[v1 tensor contracts and architecture](flightlib-cuda/docs/architecture.md).
+It preserves Flightmare dynamics and uses no PhysX backend. The dev check also
+compiles and exercises the contracts with both C++ and CUDA.
+
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and
 the native dependencies for the CPU `flightlib` and `flightgym` builds. On
@@ -33,8 +42,9 @@ docker compose exec dev bash docker/check.sh
 docker compose exec dev bash
 ```
 
-The check compiles and runs a CUDA kernel, runs the upstream headless C++ suite,
-and imports the freshly built `flightgym` for a Python reset/step test. The
+The check runs CUDA contract tests, the CPU parity suite, and a Python reset/step
+test against the freshly built `flightgym`. The upstream suite and installation
+smoke are available through the separate `legacy` and `doctor` profiles. The
 local architecture defaults to `120-real` for the RTX 5070 Ti. For a different
 GPU, set `FLIGHTMARE_CUDA_ARCHITECTURES` before starting Compose. The check uses
 four build jobs by default. Set `CMAKE_BUILD_PARALLEL_LEVEL` in the container
