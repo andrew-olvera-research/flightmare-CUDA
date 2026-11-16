@@ -20,3 +20,4 @@ cmake -S flightlib -B /build/flightlib -G Ninja \
 cmake --build /build/flightlib
 ctest --test-dir /build/flightlib --output-on-failure
 PYTHONPATH=/build/flightlib python3 -m pytest -q docker/smoke/test_flightgym.py
+bash docker/check-parity.sh

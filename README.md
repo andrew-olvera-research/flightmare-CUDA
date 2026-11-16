@@ -47,6 +47,26 @@ The CPU oracle uses installed dependencies and `ENABLE_FAST=OFF` to preserve
 its NaN-based command validation. `docker compose stop` stops the container
 and keeps its cache.
 
+### CPU parity tests
+
+`flightmare-parity-tests` links the frozen C++ simulator. The full dev check
+runs it automatically. For a faster CPU-only loop, run the suite directly or
+filter to a behavior group with CTest's `-R` option.
+
+```sh
+docker compose exec dev bash docker/check-parity.sh
+docker compose exec dev bash docker/check-parity.sh -R WorldBoxContract
+docker compose exec -T dev bash -c '/build/flightmare-parity-tests/flightmare_oracle_trace > /build/flightmare-oracle.json'
+```
+
+The versioned JSON contains deterministic reset inputs, commands, and
+per-step C++ outputs. Physics traces include all 25 state fields, simulation
+time, and four rotor speeds and thrusts. The scalar environment trace records
+observation order, reward, and the terminal flag and reward adjustment. This
+trace steps the scalar environment continuously. The vector environment tests
+exercise auto-reset separately, checking the returned reset observation and
+terminal reward across lanes using the CPU's random resets.
+
 ## Updates
  *  17.11.2020 [Spotlight](https://youtu.be/8JyrjPLt8wo) Talk at CoRL 2020 
  *  04.09.2020 Release Flightmare
