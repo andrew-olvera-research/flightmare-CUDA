@@ -123,13 +123,21 @@ def execute(profile, runner):
         runner.run('harness', [sys.executable, '-m', 'unittest', 'discover',
                                '-s', 'scripts/tests', '-v'])
         runner.cmake('contracts', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
-                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON', *cuda_options])
+                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
+                      '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=', *cuda_options])
         runner.ctest('contracts', '/build/flightlib-cuda-contracts')
     if profile == 'verify':
         # Build the binding against the SAME oracle library, not a second build.
         runner.cmake('parity', 'flightmare-parity-tests', '/build/flightmare-parity-tests',
                      targets=['flightmare_parity_tests', 'flightmare_oracle_trace', 'flightgym'])
         runner.ctest('parity', '/build/flightmare-parity-tests')
+        runner.cmake('lifecycle', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
+                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
+                      '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/flightmare-parity-tests/flightlib/libflightlib.a',
+                      *cuda_options], targets=['lifecycle_test'])
+        runner.run('lifecycle-parity', ['ctest', '--test-dir', '/build/flightlib-cuda-contracts',
+                   '-R', '^flightlib_cuda.lifecycle_parity$', '--no-tests=error',
+                   '--output-on-failure', '--output-junit', str(runner.directory / 'lifecycle.xml')])
         env = dict(os.environ, PYTHONPATH='/build/flightmare-parity-tests/flightlib')
         runner.run('binding', [sys.executable, '-m', 'pytest', '-q',
                                'docker/smoke/test_flightgym.py',

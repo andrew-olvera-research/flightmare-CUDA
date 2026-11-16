@@ -3,7 +3,8 @@
 Status: version 1 data contract frozen for implementation. Kernel partitioning
 below is the initial design and may change through profiling without changing
 the contract. CUDA-2 implements persistent storage, binding validation, stream
-ordering, and ownership. It does not yet integrate dynamics or execute queries.
+ordering, and ownership. CUDA-3 adds model preparation and low-level state and
+command lifecycle operations. It does not yet integrate dynamics or execute queries.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -479,6 +480,92 @@ different lifetime semantics. External consumers must submit through enqueueOn
 to participate in the completion chain. Torch bindings, physics stepping,
 state/command lifecycle operations, geometry algorithms, and graph execution
 are not implemented in CUDA-2.
+
+## CUDA 3 implementation completed
+
+Tracking: [CUDA-3](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/3).
+The frozen tensor declarations and CPU oracle are unchanged. The new
+[lifecycle API](../include/flightlib_cuda/lifecycle.hpp) separates host setup from
+asynchronous device state operations. No controller, motor-response, integration,
+task-reset, or geometry kernels are introduced.
+
+### Model preparation and setup boundary
+
+ModelConfig represents the supported Flightmare YAML parameters. loadModel reads
+the quadrotor_dynamics section with exact vector-length checks. prepareModels
+builds the component-major model table using host Eigen arithmetic, including
+allocation/inverse allocation, diagonal inertia/inverse inertia, motor limits,
+thrust polynomial, rate gains, and gravity. Eigen/yaml-cpp are runtime build
+dependencies only; contracts.hpp remains dependency-free. The production library
+does not link Flightlib. The legacy constructor thrust cap is deliberately kept
+when YAML or ModelConfig changes speed limits or thrust coefficients.
+
+Setup rejects nonfinite parameters, nonpositive mass/arm length/time constant,
+invalid limits, singular/nonfinite derived matrices, invalid topology/active
+masks, and nonfinite/inverted bounds. This is a stricter domain than legacy
+setters that admit some degenerate parameters; it does not alter valid supported
+Flightmare configurations. Direct legacy setter quirks outside this supported
+configuration domain are not emulated.
+
+configure validates all host inputs and prepares all tables before enqueueing
+uploads. It preserves physical state, motors, commands, and episode counters.
+Copies and their explicit completion wait occur under the submission lock, so
+no other host submitter can interleave an update or invalidate upload-source
+lifetime. This setup callback is an intentional exception to the ordinary
+launch-callback prohibition on synchronization. It is not part of the step hot
+path. An actual CUDA copy/completion failure poisons the owner; rollback of a
+partially failed device transfer is not promised. Input-validation failures do
+not submit copies or mutate the previous configuration.
+
+prepareSchedule uses float remaining-time subtraction with a bounded capacity
+and a no-progress check. Zero duration produces an empty schedule; invalid
+durations and an unrepresentably small substep are rejected. configure requires
+the exact prepared schedule length to equal the runtime's allocated S. Choose S
+with prepareSchedule before constructing the runtime; a different length needs
+a new runtime. The control_dt metadata changes at the same ordered setup boundary.
+
+### State and command operations
+
+bindStateInput registers separate external selected[N], x[25,N], and time[N]
+buffers. bindCommandInput registers selected[N], mode[N], time[N], payload[4,N].
+They override caller expected-shape metadata with the frozen operation shapes.
+The runtime validates allocation extent/device/dtype/stride/aliasing once;
+operation entry points also reject tokens with the wrong schema or owner.
+Use retained allocation owners or keep external allocations alive through
+completion, as required by CUDA-2.
+
+resetState, setState, and setCommand enqueue lane-parallel kernels without
+allocation, copies, or host completion reads. Inactive lanes report Inactive.
+Unselected active lanes report Ok and leave telemetry untouched. Selected masks
+other than 1 are rejected per lane. State operations validate all 25 components
+and time before any write. setState preserves motors; resetState zeros both
+motor arrays. Neither changes accepted commands or task counters. Non-unit
+quaternions and auxiliary fields are preserved exactly.
+
+adaptCommand applies the legacy finite-time and XOR validity rules before
+producing a typed command. Ambiguous commands remain Invalid. The device command
+operation validates its active payload, clamps through the lane's model ID, and
+updates the persistent accepted command only on success. Collective acceleration
+uses the legacy single-thrust clamp; body rates use their axis limits. Invalid
+commands leave a previously accepted command unchanged. Failed state/reset
+operations similarly retain prior telemetry and set their device status.
+
+### Parity and validation
+
+Local verify builds lifecycle_test against the already-built frozen CPU library;
+it does not rebuild a second CPU oracle or alter the integrity manifest. The
+test covers default and actual YAML model preparation, cached-cap behavior,
+allocation/inertia matrices, reset/setState and motor telemetry, command adapter
+validity/clamps, prior-command retention, timestep remainders/zero duration,
+invalid setup, and ordered model updates preserving telemetry. It exercises
+3 environments x 11 slots with different model IDs and mixed invalid, inactive,
+and unselected lanes. State and lifecycle comparisons are exact; derived model
+arithmetic uses tolerance 2e-6 * max(1, abs(reference)).
+
+fast retains the runtime/contract checks; verify adds lifecycle differential
+coverage after building the oracle and before the Python binding check. The
+host sanitizer limitation from CUDA-2 remains unresolved. Full trajectory parity
+belongs to CUDA-4 and is not claimed by these lifecycle comparisons.
 
 ## Legacy source anchors
 

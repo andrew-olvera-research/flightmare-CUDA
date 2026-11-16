@@ -8,6 +8,8 @@
   and saved test reports.
 - [CUDA-2] Persistent GPU arena, validated external bindings, asynchronous launch
   ordering, shared ownership, and runtime regression/profiling checks.
+- [CUDA-3] Model/YAML preparation, exact float substep schedules, state and command
+  lifecycle kernels, and CPU/GPU differential lifecycle validation.
 
 Dynamics kernels are not implemented yet. This version identifies the rewrite
 baseline, not completed CPU/GPU physics parity.

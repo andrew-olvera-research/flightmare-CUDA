@@ -25,7 +25,7 @@ docker compose exec -T dev python3 scripts/local_ci.py verify
 | Profile | Coverage | Use |
 | --- | --- | --- |
 | fast | Version/oracle guard, harness failure tests, host and GPU contracts | Routine CUDA/header edits |
-| verify | fast plus CPU parity and Python binding reset/step | Before development checkpoints/commits |
+| verify | fast plus CPU parity, CPU/GPU lifecycle differential checks, and Python binding reset/step | Before development checkpoints/commits |
 | release | verify plus clean committed tree and unused tag requirement | Before release tagging |
 | legacy | Original headless upstream suite | Upstream/dependency changes |
 | doctor | Compiler/GPU information and CUDA installation smoke | Container/driver/toolkit changes |
