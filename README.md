@@ -16,7 +16,37 @@ Flightmare can be used for various applications, including path-planning, reinfo
 
 ## Installation
 Installation instructions can be found in our [Wiki](https://github.com/uzh-rpg/flightmare/wiki).
-  
+
+## CUDA development
+
+The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
+pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and
+the native dependencies for the CPU `flightlib` and `flightgym` builds. On
+Windows, use Docker Desktop's WSL 2 backend with an NVIDIA driver that supports
+CUDA 13.3 (R610 or later).
+
+From the repository root:
+
+```sh
+docker compose up -d --build
+docker compose exec dev bash docker/check.sh
+docker compose exec dev bash
+```
+
+The check compiles and runs a CUDA kernel, runs the upstream headless C++ suite,
+and imports the freshly built `flightgym` for a Python reset/step test. The
+local architecture defaults to `120-real` for the RTX 5070 Ti. For a different
+GPU, set `FLIGHTMARE_CUDA_ARCHITECTURES` before starting Compose. The check uses
+four build jobs by default. Set `CMAKE_BUILD_PARALLEL_LEVEL` in the container
+to change that limit.
+
+The checkout is mounted at `/workspace`. The named `/build` volume keeps the
+CPU and CUDA build trees and compiler cache between container starts.
+`PYTHONPATH` points to the CMake-built extension in `/build/flightlib`.
+The CPU oracle uses installed dependencies and `ENABLE_FAST=OFF` to preserve
+its NaN-based command validation. `docker compose stop` stops the container
+and keeps its cache.
+
 ## Updates
  *  17.11.2020 [Spotlight](https://youtu.be/8JyrjPLt8wo) Talk at CoRL 2020 
  *  04.09.2020 Release Flightmare

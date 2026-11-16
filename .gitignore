@@ -1,8 +1,33 @@
 # Python
-dist
-*.egg-info
+dist/
+*.egg-info/
 *.so
-__pycache__
+*.py[cod]
+__pycache__/
+.pytest_cache/
+.venv/
+
+# CMake, Ninja, and CUDA build outputs
+build/
+!/flightlib/build/
+build-*/
+cmake-build-*/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+cmake_install.cmake
+compile_commands.json
+Testing/
+.ninja_deps
+.ninja_log
+*.o
+*.a
+*.cubin
+*.fatbin
+
+# Local Compose configuration
+/.env
 
 
 # Gitignore

@@ -14,6 +14,7 @@ option(ENABLE_FAST "Build with optimizations for speed" ON)
 option(ENABLE_BLAS "Build using BLAS and LAPACK libraries" OFF)
 option(ENABLE_PARALLEL "Build using openmp parallelization" ON)
 option(EIGEN_FROM_SYSTTEM "Use the system-provided Eigen" ON)
+option(FLIGHTLIB_USE_SYSTEM_DEPS "Use installed Eigen, pybind11, yaml-cpp and GTest" OFF)
 set(
   EIGEN_ALTERNATIVE "" CACHE STRING
   "Path to alternative Eigen, autodownload if blank"
@@ -24,7 +25,9 @@ set(
 ################################################################################
 
 message(STATUS "======> Setup Dependencies")
-if(EIGEN_FROM_SYSTTEM)
+if(FLIGHTLIB_USE_SYSTEM_DEPS)
+  find_package(Eigen3 3.3.4 CONFIG REQUIRED)
+elseif(EIGEN_FROM_SYSTTEM)
   find_package(Eigen3 3.3.4 QUIET)
   if(EIGEN3_FOUND)
     message(STATUS "Using system provided Eigen.")
@@ -43,8 +46,18 @@ endif()
 message(STATUS "Eigen3 include dir: ${EIGEN3_INCLUDE_DIR}")
 
 # Including dependencies 
-include(cmake/pybind11.cmake)
-include(cmake/yaml.cmake)
+if(FLIGHTLIB_USE_SYSTEM_DEPS)
+  # The packaged pybind11 CMake helpers use IN_LIST.
+  cmake_policy(SET CMP0057 NEW)
+  find_package(Python 3 REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(pybind11 CONFIG REQUIRED)
+  find_package(yaml-cpp CONFIG REQUIRED)
+  set(FLIGHTLIB_YAML_TARGET yaml-cpp::yaml-cpp)
+else()
+  include(cmake/pybind11.cmake)
+  include(cmake/yaml.cmake)
+  set(FLIGHTLIB_YAML_TARGET yaml-cpp)
+endif()
 
 # Including dependencies 
 find_package(OpenCV REQUIRED)
@@ -189,7 +202,13 @@ endif()
 
 # Setup Testing and Benchmark
 if(BUILD_TESTS OR BUILD_BENCH)
-  include(cmake/gtest.cmake)
+  if(FLIGHTLIB_USE_SYSTEM_DEPS)
+    find_package(GTest CONFIG REQUIRED)
+    set(FLIGHTLIB_GTEST_MAIN GTest::gtest_main)
+  else()
+    include(cmake/gtest.cmake)
+    set(FLIGHTLIB_GTEST_MAIN gtest_main)
+  endif()
   enable_testing()
 endif()
 
@@ -203,7 +222,7 @@ else()
   add_library(${PROJECT_NAME} ${FLIGHTLIB_SOURCES})
   target_link_libraries(${PROJECT_NAME} PRIVATE
     ${OpenCV_LIBRARIES}
-    yaml-cpp
+    ${FLIGHTLIB_YAML_TARGET}
     zmq
     zmqpp
     stdc++fs)
@@ -245,8 +264,7 @@ if(BUILD_TESTS AND FLIGHTLIB_GYM_TEST_SOURCES)
   add_executable(test_gym ${FLIGHTLIB_GYM_TEST_SOURCES})
   target_link_libraries(test_gym
     ${LIBRARY_NAME}
-    gtest
-    gtest_main)
+    ${FLIGHTLIB_GTEST_MAIN})
 add_test(test_gym test_gym)
 endif()
 
@@ -255,8 +273,7 @@ if(BUILD_TESTS AND FLIGHTLIB_TEST_SOURCES)
   add_executable(test_lib ${FLIGHTLIB_TEST_SOURCES})
   target_link_libraries(test_lib PUBLIC
     ${LIBRARY_NAME}
-    gtest
-    gtest_main)
+    ${FLIGHTLIB_GTEST_MAIN})
 add_test(test_lib test_lib)
 endif()
 
@@ -265,8 +282,7 @@ if(BUILD_UNITY_BRIDGE_TESTS AND FLIGHTLIB_UNITY_BRIDGE_TEST_SOURCES)
   add_executable(test_unity_bridge ${FLIGHTLIB_UNITY_BRIDGE_TEST_SOURCES})
   target_link_libraries(test_unity_bridge PUBLIC
     ${LIBRARY_NAME}
-    gtest
-    gtest_main)
+    ${FLIGHTLIB_GTEST_MAIN})
 add_test(test_unity_bridge test_unity_bridge)
 endif()
 

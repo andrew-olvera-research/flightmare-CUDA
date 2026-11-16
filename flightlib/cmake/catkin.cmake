@@ -13,7 +13,7 @@ target_link_libraries(${PROJECT_NAME}
   ${LAPACK_LIBRARIES}
   ${LAPACKE_LIBRARIES}
   ${OpenCV_LIBRARIES}
-  yaml-cpp
+  ${FLIGHTLIB_YAML_TARGET}
   zmq
   zmqpp
 )

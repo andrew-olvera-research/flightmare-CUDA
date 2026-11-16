@@ -1,0 +1,23 @@
+name: flightmare-cuda
+
+services:
+  dev:
+    build:
+      context: docker
+      dockerfile: Dockerfile.dev
+    image: flightmare-cuda-dev:13.3.1
+    gpus: all
+    init: true
+    command: ["sleep", "infinity"]
+    working_dir: /workspace
+    environment:
+      FLIGHTMARE_PATH: /workspace
+      PYTHONPATH: /build/flightlib
+      CCACHE_DIR: /build/ccache
+      FLIGHTMARE_CUDA_ARCHITECTURES: "${FLIGHTMARE_CUDA_ARCHITECTURES:-120-real}"
+    volumes:
+      - .:/workspace
+      - build:/build
+
+volumes:
+  build:
