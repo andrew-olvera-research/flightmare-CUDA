@@ -10,9 +10,9 @@
 using namespace flightlib_cuda::v1;
 using Clock=std::chrono::steady_clock;
 static bool watching=false;
-enum Counter {Alloc,Free,Copy,Sync,Launch,Wait,Record,GetDevice,SetDevice,StreamDevice,Flags,Capture,LastError,Count};
+enum Counter {Alloc,Free,Copy,Sync,Launch,GraphLaunch,Wait,Record,GetDevice,SetDevice,StreamDevice,Flags,Capture,LastError,Count};
 static unsigned long long calls[Count]{};
-const char* names[]={"allocations","frees","copies","host_syncs","kernel_launches","event_waits","event_records","get_device","set_device","stream_device","stream_flags","capture_queries","last_error"};
+const char* names[]={"allocations","frees","copies","host_syncs","kernel_launches","graph_launches","event_waits","event_records","get_device","set_device","stream_device","stream_flags","capture_queries","last_error"};
 #define WRAP(name,args,values,counter) extern "C" cudaError_t __real_##name args; \
  extern "C" cudaError_t __wrap_##name args {if(watching)++calls[counter];return __real_##name values;}
 WRAP(cudaMalloc,(void** p,size_t n),(p,n),Alloc)
@@ -26,6 +26,7 @@ WRAP(cudaStreamSynchronize,(cudaStream_t s),(s),Sync)
 WRAP(cudaEventSynchronize,(cudaEvent_t e),(e),Sync)
 WRAP(cudaLaunchKernel,(const void* f,dim3 g,dim3 b,void** a,size_t m,cudaStream_t s),(f,g,b,a,m,s),Launch)
 WRAP(__cudaLaunchKernel,(cudaKernel_t f,dim3 g,dim3 b,void** a,size_t m,cudaStream_t s),(f,g,b,a,m,s),Launch)
+WRAP(cudaGraphLaunch,(cudaGraphExec_t g,cudaStream_t s),(g,s),GraphLaunch)
 WRAP(cudaStreamWaitEvent,(cudaStream_t s,cudaEvent_t e,unsigned f),(s,e,f),Wait)
 WRAP(cudaEventRecord,(cudaEvent_t e,cudaStream_t s),(e,s),Record)
 WRAP(cudaGetDevice,(int* p),(p),GetDevice)
@@ -53,7 +54,7 @@ int main(int argc,char** argv){try{
  Index E=std::stoul(argv[1]),A=std::stoul(argv[2]);int iterations=std::stoi(argv[3]),samples=std::stoi(argv[4]),warmup=std::stoi(argv[5]);
  std::string workload=argv[6];int percent=std::stoi(argv[7]);bool trace=std::stoi(argv[8]);float control_dt=std::stof(argv[9]);int reset_percent=std::stoi(argv[10]);bool environment=workload.rfind("environment",0)==0;
  if(iterations<1||samples<1||warmup<0||percent<0||percent>100||reset_percent<0||reset_percent>100)throw std::invalid_argument("invalid measurement dimensions");
- if(workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random")throw std::invalid_argument("unknown workload");
+ if(workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random"&&workload!="environment-graph")throw std::invalid_argument("unknown workload");
  auto setup_begin=Clock::now();RuntimeConfig config;config.environments=E;config.slots=A;config.substeps=(workload=="dynamics"||environment)?prepareSchedule(control_dt).size():0;
  Simulation sim(config);Index N=sim.views().topology.batch.lanes;
  std::vector<Mask> active(N),selected(N,1);for(Index i=0;i<N;++i)active[i]=(i%100)<static_cast<Index>(percent);
@@ -75,11 +76,14 @@ int main(int argc,char** argv){try{
    task=bindTaskInputs(sim,input(actions,DType::Float32,{E,A,4}),selection,states.inputs()[1],states.inputs()[2]);
    resetEnvironment(sim,task);
  }
+ Graph graph;double capture_ms=0;
+ if(workload=="environment-graph"){auto begin=Clock::now();graph=captureEnvironment(sim,task,source,execution);capture_ms=ms(begin,Clock::now());}
  cudaStream_t direct;check(cudaStreamCreateWithFlags(&direct,cudaStreamNonBlocking));
  cudaEvent_t start,end;check(cudaEventCreate(&start));check(cudaEventCreate(&end));sim.synchronize();
  const double setup_ms=ms(setup_begin,Clock::now());
  auto step=[&]{
-   if(environment)stepEnvironment(sim,task,source,execution);
+   if(workload=="environment-graph")sim.replay(graph);
+   else if(environment)stepEnvironment(sim,task,source,execution);
    else if(workload=="dynamics")stepDynamics(sim);
    else if(workload=="direct")touch<<<(N+127)/128,128,0,direct>>>(sim.views().state.x.data,N);
    else if(workload=="runtime")sim.enqueue(touchLaunch);
@@ -89,7 +93,7 @@ int main(int argc,char** argv){try{
    else{setState(sim,states);setCommand(sim,commands);resetState(sim,states);}
  };
  for(int i=0;i<warmup;++i)step();check(cudaStreamSynchronize(direct));sim.synchronize();
- std::cout<<"{\"schema_version\":1,\"active_lanes\":"<<std::count(active.begin(),active.end(),Mask{1})<<",\"setup_ms\":"<<setup_ms<<",\"arena_bytes\":"<<sim.allocationPlan().arena_bytes
+ std::cout<<"{\"schema_version\":1,\"active_lanes\":"<<std::count(active.begin(),active.end(),Mask{1})<<",\"setup_ms\":"<<setup_ms<<",\"capture_ms\":"<<capture_ms<<",\"arena_bytes\":"<<sim.allocationPlan().arena_bytes
    <<",\"payload_bytes\":"<<sim.allocationPlan().payload_bytes<<",\"external_input_bytes\":"<<(environment?142ULL:126ULL)*N
    <<",\"samples\":[";
  for(int sample=0;sample<samples;++sample){

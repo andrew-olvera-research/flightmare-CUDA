@@ -100,6 +100,32 @@ void mixedLanes(){
   Fixture other(3,11);rejects([&]{stepEnvironment(other.sim,f.inputs);});
   auto bad=TaskConfig{};bad.goal[0]=NAN;rejects([&]{configureTask(f.sim,{bad});});
 }
+void graphParity(){
+  Fixture a(3,11,.006125f,123),b(3,11,.006125f,123);const int N=33;
+  for(int n=0;n<N;++n){a.state[2*N+n]=b.state[2*N+n]=n%2?5:0;}
+  a.syncInputs();b.syncInputs();resetEnvironment(a.sim,a.inputs);resetEnvironment(b.sim,b.inputs);
+  b.sim.synchronize();auto before=download(b.sim.views().state.x.data,25*N);
+  Graph graph=captureEnvironment(b.sim,b.inputs,ResetSource::Random);
+  CHECK(download(b.sim.views().state.x.data,25*N)==before);
+  for(int i=0;i<30;++i){
+    for(int n=0;n<N*4;++n)a.action[n]=b.action[n]=float((n+i)%9-4)*.1f;
+    if(i==3)a.action[0]=b.action[0]=NAN;
+    a.syncInputs();b.syncInputs();
+    if(i==8){resetEnvironment(a.sim,a.inputs);resetEnvironment(b.sim,b.inputs);}
+    if(i==10){configureTask(a.sim,{TaskConfig{}});configureTask(b.sim,{TaskConfig{}});
+      rejects([&]{b.sim.replay(graph);});b.sim.synchronize();graph=captureEnvironment(b.sim,b.inputs,ResetSource::Random);}
+    stepEnvironment(a.sim,a.inputs,ResetSource::Random);b.sim.replay(graph);a.sim.synchronize();b.sim.synchronize();
+    for(const char* name:{"state.x","state.time","state.motor_omega","state.motor_thrust","commands.payload",
+                         "task_output.observation","task_output.transition_observation","task_output.reward"}){
+      auto it=std::find_if(a.sim.allocationPlan().buffers.begin(),a.sim.allocationPlan().buffers.end(),[&](auto& x){return x.name==name;});
+      CHECK(download(static_cast<float*>(a.sim.buffer(name)),it->bytes/4)==download(static_cast<float*>(b.sim.buffer(name)),it->bytes/4));}
+    CHECK(download(a.sim.views().task_output.done.data,N)==download(b.sim.views().task_output.done.data,N));
+    CHECK(download(a.sim.views().task_output.valid.data,N)==download(b.sim.views().task_output.valid.data,N));
+    CHECK(download(a.sim.views().episodes.episode.data,N)==download(b.sim.views().episodes.episode.data,N));
+    CHECK(download(a.sim.views().episodes.random_counter.data,N)==download(b.sim.views().episodes.random_counter.data,N));
+  }
+  rejects([&]{a.sim.replay(graph);});
+}
 void failureIsolation(){
   Fixture f(1,3);for(int n=0;n<3;++n)f.state[2*3+n]=5;f.state[10*3+2]=1e30f;
   f.syncInputs();resetEnvironment(f.sim,f.inputs);f.sim.synchronize();
@@ -145,4 +171,4 @@ void rngAndBranches(){
   a.syncInputs();resetEnvironment(a.sim,a.inputs);a.sim.synchronize();auto obs=download(a.sim.views().task_output.observation.data,12*N);
   for(int n=0;n<N;++n){Eigen::Quaternionf q(a.state[3*N+n],a.state[4*N+n],a.state[5*N+n],a.state[6*N+n]);auto e=q.toRotationMatrix().eulerAngles(2,1,0);for(int k=0;k<3;++k)near(obs[12*n+3+k],e[k],2e-6f);}
 }
-int main(){try{scalarEnv();mixedLanes();rngAndBranches();randomObservationParity();failureIsolation();std::cout<<"Environment parity and lifecycle passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{scalarEnv();mixedLanes();rngAndBranches();randomObservationParity();failureIsolation();graphParity();std::cout<<"Environment parity and lifecycle passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

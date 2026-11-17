@@ -20,5 +20,9 @@
   explicit and seeded device resets, episode lifecycle parity, reset-density
   profiling and matched wall-time regression gates.
 
-Policy integration, graph execution and geometry remain subsequent layers; this
+- [CUDA-6] Resident PyTorch bindings with retained tensor ownership and explicit
+  stream handoffs, native environment graph capture/replay and invalidation,
+  legacy A=1 views, GPU rollout example, and Python/policy profiling workloads.
+
+Geometry remains a subsequent layer; this
 version does not imply complete integrated Flightmare parity.

@@ -1,8 +1,9 @@
 # Flightmare systems profiling
 
 An independent Python package for measuring the CUDA rewrite before and during
-dynamics implementation. Uses only Python's standard library. The native probe
-links the actual runtime/lifecycle library; it is not an alternative simulator.
+dynamics implementation. The orchestrator uses Python's standard library; CUDA-6
+Python/policy probes use the pinned PyTorch environment. Every probe uses the
+production library or binding, not an alternative simulator.
 Run locally in the existing Linux CUDA container, from the repository root:
 
 ```sh
@@ -16,7 +17,7 @@ development environment with setuptools. The CLI requires this source checkout
 Nsight Systems is required only for `--trace`. A failed trace is not a green run.
 Results live in ignored `.local-ci/profile-<timestamp>/`: JSON, Markdown summary,
 per-case samples/logs, binary/source identity, and optional Nsight/SQLite files.
-No cloud infrastructure or Python CUDA framework is required.
+No cloud infrastructure is required. Native probes do not require PyTorch.
 
 ## Measurement design
 
@@ -32,6 +33,29 @@ No cloud infrastructure or Python CUDA framework is required.
 | environment | Raw actions through dynamics, observations/reward/terminal, explicit auto-reset; three launches |
 | environment-split | Same workload, separate T/R reference; four launches |
 | environment-random | Three-launch environment with seeded device random auto-reset |
+| environment-graph | Native explicit-reset environment through one graph launch / three kernel nodes |
+| python / python-graph | Production Python binding, ordinary submission / environment graph replay |
+| policy / policy-graph | Python binding plus preallocated GPU observation matmul -> actions and per-environment reward reduction |
+
+For CUDA-6, install the pinned binding dependencies once with
+`docker compose exec -T dev bash scripts/setup-cuda-python.sh`, then run:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads environment,environment-graph,python,python-graph,policy,policy-graph --cases 1x1,3x11,1024x16,4096x16 --reset-percent 50 --iterations 100 --samples 5 --warmup 10 --trace
+```
+
+The harness incrementally builds the actual extension. Override
+`--python-interpreter` and `--python-build-dir` when needed. Graph capture and
+first replay/upload happen outside measurement; capture_ms reports host capture/
+instantiation time, not upload completion latency. Python inputs/outputs and
+policy workspaces are persistent. The policy is a 12x4 linear matmul and reward
+sum over slots, not a trained network or optimizer; its feedback changes trajectories and
+reset density, so compare policy against policy-graph, not fixed-action latency.
+The graph captures the environment, not the whole policy/learning iteration.
+Use `--trace-all` to trace intermediate shapes too: framework algorithms can
+switch by shape, so tracing only the smallest/largest cases can miss temporary
+workspaces. Policy workload version 2 uses per-environment aggregation; matched
+baseline checks reject older global-sum workloads.
 
 For CUDA-5 fusion and reset-density comparisons:
 
@@ -43,7 +67,7 @@ Use reset-percent 0/50/100 and sparse active-percent runs. Environment probes st
 selected terminal lanes at ground with raw action -1; other lanes start at altitude
 50 with action 0. Explicit auto-reset repeats those samples; random auto-reset
 instead samples the legacy reset distribution and changes subsequent reset density.
-The repeated 100-lane mask is approximate for small batches. Reports include actual
+The repeated 100-lane mask is approximate for small batches. Native reports include actual
 auto-reset counts (including warmup), random draws and final done count. Functional
 readback checks active validity/status, finite outputs and inactive output isolation.
 The differential suite remains responsible for complete transition parity.
@@ -89,15 +113,15 @@ All input allocations and registrations happen once before warmup. Every case
 has a fresh process/context; setup time includes context/JIT/initialization costs
 and must not be compared to steady-state step time. Jobs are shuffled with seed 0.
 
-Python orchestrates native loops. **These are not Python-per-step latency or
-Torch interop measurements.** That overhead belongs in the harness when CUDA-6
-adds the real binding. Do not add a synthetic Python binding and treat its cost
-as the future production API. Only the dynamics workload measures physics stepping;
-it does not measure task logic, policy integration, or geometry.
+Native workloads use C++ loops; python/policy workloads execute the production
+Python API on every iteration, including tensor-owner checks and stream handoffs.
+All timings exclude setup, warmup and final functional readback. Dynamics covers
+physics only; environment includes task/reset; policy adds the small GPU consumer/
+producer workload. No current workload measures geometry.
 
 Three clocks are kept distinct:
 
-- Host submission: wall clock around the native loop, excluding completion wait.
+- Host submission: wall clock around the C++ or Python loop, excluding completion wait.
 - End-to-end wall: timing markers through one explicit completion wait per sample.
 - GPU timeline: CUDA event elapsed time, including idle/queue gaps between work.
 
@@ -115,10 +139,29 @@ processes with one short measured sample, so traced durations do not contaminate
 the untraced sample distribution. Capture covers boundary markers and the final
 explicit synchronization as well as the loop. Runtime workloads therefore add
 two marker submissions to trace event counts; native hot-loop counters exclude
-them. Trace kernel count and CUDA API errors are checked.
+them. Trace kernel count and CUDA API errors are checked. Graph host API launch
+counts and GPU kernel-node counts are checked separately. Nsight runs with
+`--cuda-graph-trace=node`; its default graph-level view would hide those nodes.
 
-For these single-stream traces, summed kernel durations and first-to-last kernel
-span give an idle-gap fraction. It is not occupancy or GPU utilization. Local
+Python probes report PyTorch allocator deltas rather than pretending native link
+wrappers observe framework calls. Deltas include cumulative allocation/free
+requests as well as device allocations and current bytes, catching temporary
+cached workspace churn. They do not rule out transfers or non-Torch allocation.
+Use `--trace` (or `--trace-all`) to check the measured Python path:
+it rejects malloc/free/memcpy and device/stream synchronization APIs, requires
+one event completion wait at the measurement boundary, checks CUDA errors and
+recorded memory events, and counts all three environment kernel nodes per
+iteration. Environment traces require zero memcpy/memset events. Policy workloads
+also require zero copies, but permit at most one 1-KiB device zero-fill per
+iteration: the measured cuBLAS skinny-matmul scratch initialization at intermediate
+shapes. Counts and bytes remain in the report; larger or nonzero-pattern clears
+fail. This allowance does not permit allocation or synchronization. Policy kernels
+are reported separately. This is evidence about the
+warmed measured window, not all possible user policy implementations.
+
+For multi-stream traces, the union of kernel intervals and first-to-last kernel
+span give an idle-gap fraction; summed kernel durations are also retained. The
+union avoids double-counting concurrent kernels. It is not occupancy or GPU utilization. Local
 memory and register metadata are reported but do not substitute for Nsight
 Compute's spill/occupancy metrics. Missing memcpy/memset tables mean no recorded
 events of those types only after runtime and kernel trace data are verified.
@@ -127,8 +170,10 @@ events of those types only after runtime and kernel trace data are verified.
 
 The harness fails on functional result mismatch, wrong launch counts, hot-loop
 application copies/allocations/frees/host synchronizations, trace errors, or a
-changed source fingerprint during the run. No performance thresholds are frozen
-yet. Arena payload, alignment padding, and external input bytes are separate;
+changed source fingerprint during the run. Python untraced runs enforce allocator
+deltas; independent trace gates provide the broader residency evidence above.
+Optional matched baselines enforce the configured wall-time ratio. Arena payload,
+alignment padding, and external input bytes are separate;
 driver/context overhead and peak VRAM are not measured by those byte counts.
 
 Builds are incremental but always requested so stale binaries are not silently
@@ -142,7 +187,6 @@ docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev \
 ```
 
 Future layers should add representative production workloads here, including
-model-diversity and command-mode sweeps, reset bursts, query density/capacity overflow, graph
-replay, stream handoffs, and the real policy binding. Preserve source/schema and
-hardware identity when adding machine-specific baselines. For multi-stream
-workloads replace the single-stream idle formula with interval-union accounting.
+model-diversity and command-mode sweeps, reset bursts, query density/capacity
+overflow, and representative trained policies. Preserve source/schema,
+Torch/CUDA versions and hardware identity when adding machine-specific baselines.

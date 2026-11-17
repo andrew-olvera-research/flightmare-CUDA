@@ -5,8 +5,9 @@ below is the initial design and may change through profiling without changing
 the contract. CUDA-2 implements persistent storage, binding validation, stream
 ordering, and ownership. CUDA-3 adds model preparation and low-level state and
 command lifecycle operations. CUDA-4 adds fused dynamics. CUDA-5 adds native
-environment stepping, task outputs and episode resets; graph execution, policy
-bindings and geometry remain subsequent layers.
+environment stepping, task outputs and episode resets. CUDA-6 adds resident
+PyTorch bindings, explicit graph replay and GPU policy stream handoffs.
+Geometry remains a subsequent layer.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -477,8 +478,8 @@ nsys profile --trace=cuda --sample=none --cpuctxsw=none \
 
 Local fast/verify cover the runtime. Compute Sanitizer targets runtime_test but
 remains blocked by the host WDDM debugger interface; that is not a sanitizer
-pass. CUDA graph capture is explicitly rejected until CUDA-6 implements its
-different lifetime semantics. External consumers must submit through enqueueOn
+pass. CUDA-2 rejected graph capture; CUDA-6 below adds explicit owned capture and
+framework handoffs. In CUDA-2, external consumers submit through enqueueOn
 to participate in the completion chain. Torch bindings, physics stepping,
 state/command lifecycle operations, geometry algorithms, and graph execution
 are not implemented in CUDA-2.
@@ -682,6 +683,48 @@ rotor workload previously had zero torque, so the old comparison was unaffected)
 
 See [CUDA-5 systems evidence](cuda5-performance.md) for measured fusion benefits,
 logical traffic budgets and the local performance gate.
+
+## CUDA-6 Python integration and graph execution
+
+Tracking: [CUDA-6](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/6).
+The [Python API](../python/README.md) exports arena storage through DLPack and
+retains bound PyTorch allocation owners. There are no frozen shape changes and
+no additional per-lane staging buffers. The A=1 legacy adapter only changes
+views. CPU snapshots and trajectory-history copies are explicit caller actions.
+
+The runtime captures the existing preparation -> D -> fused T/R callback into
+a graph at setup. Graphs retain their simulation and bound owners. Replay submits
+one graph launch with three kernel nodes; D still keeps all substeps local.
+Capture drains outstanding registered uses but executes no timestep. First replay
+upload is warmed before steady-state measurement. Model/task/schedule setup
+increments a generation; stale or foreign graphs fail before launch without
+poisoning the runtime. Python rebind and reset-mode changes require recapture.
+Changing tensor values, reset masks or state does not change graph topology.
+
+A persistent producer event bridges the selected PyTorch stream into the private
+simulation stream; the existing tail event orders output consumption back onto
+that producer stream. These are device waits, not host completion waits. Other
+consumers use wait/record_usage, or the Python access context, so external work
+participates in owner lifetime and subsequent-step ordering. Output tensors are
+borrowed and overwritten; retaining the object preserves allocation, not history.
+Arbitrary enclosing PyTorch graph capture remains unsupported.
+
+Runtime stream metadata and redundant tail waits are elided only for the private
+stream. External handles are validated on every use because CUDA can recycle
+destroyed stream handles. Same-device submissions avoid redundant cudaSetDevice.
+The host submission mutex and failure poisoning remain intact. Setup/destruction
+may synchronize; steady-state steps do not allocate, transfer, or read state on
+the host. Inputs cannot resize. Registrations retain owners until arena teardown,
+so rebinding belongs to setup rather than a rollout loop.
+
+Verify includes native graph/non-graph exact comparisons, the existing frozen
+CPU differential gates, Python multi-slot/legacy layouts, explicit/random reset,
+configuration invalidation, pointer/layout/alias rejection, stream handoffs,
+export lifetime and a GPU policy loop. The profiler separately measures native,
+Python and policy workloads in both submission modes; graph API counts and GPU
+kernel-node counts are distinct invariants. Nsight uses node-level graph tracing.
+See [CUDA-6 performance evidence](cuda6-performance.md) for residency proof,
+scaling, the CUDA-5 regression gate and remaining end-to-end policy overhead.
 
 ## Legacy source anchors
 

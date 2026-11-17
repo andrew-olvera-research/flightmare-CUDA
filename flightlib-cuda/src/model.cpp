@@ -99,7 +99,7 @@ void configure(Simulation& sim,const std::vector<ModelConfig>& models,const std:
   context.copies.push_back({sim.buffer("topology.active"),active.data(),active.size()});
   context.copies.push_back({sim.buffer("topology.world_bounds"),bounds.data(),bounds.size()*4});
   if(!schedule.empty()) context.copies.push_back({sim.buffer("schedule.substep_dt"),schedule.data(),schedule.size()*4});
-  sim.enqueue([](const RuntimeViews& views,cudaStream_t stream,const std::vector<BindingRequest>&,void* ptr){
+  sim.enqueueSetup([](const RuntimeViews& views,cudaStream_t stream,const std::vector<BindingRequest>&,void* ptr){
     auto& c=*static_cast<Context*>(ptr);
     try {
       for(const auto& copy:c.copies) if(cudaMemcpyAsync(copy.dst,copy.src,copy.bytes,cudaMemcpyHostToDevice,stream)!=cudaSuccess)

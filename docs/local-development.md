@@ -9,7 +9,14 @@ container. No GitHub workflows, hosted runners, installed hooks, or new services
 ## Commands
 
 Start the container with `docker compose up -d --build` when needed. From the
-repository root in PowerShell:
+repository root, prepare the pinned CUDA Python environment once (also after
+replacing the build volume):
+
+```sh
+docker compose exec -T dev bash scripts/setup-cuda-python.sh
+```
+
+Then in PowerShell:
 
 ```powershell
 ./scripts/check.ps1 fast
@@ -25,7 +32,7 @@ docker compose exec -T dev python3 scripts/local_ci.py verify
 | Profile | Coverage | Use |
 | --- | --- | --- |
 | fast | Version/oracle guard, harness failure tests, host and GPU contracts | Routine CUDA/header edits |
-| verify | fast plus CPU parity, CPU/GPU lifecycle differential checks, and Python binding reset/step | Before development checkpoints/commits |
+| verify | fast plus CPU parity, CPU/GPU lifecycle/dynamics/environment differential checks, native graph parity, CUDA Python interop and legacy binding | Before development checkpoints/commits |
 | release | verify plus clean committed tree and unused tag requirement | Before release tagging |
 | legacy | Original headless upstream suite | Upstream/dependency changes |
 | doctor | Compiler/GPU information and CUDA installation smoke | Container/driver/toolkit changes |
@@ -75,6 +82,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | GPU dynamics differential test | verify: complete trajectories/motors against frozen CPU, multiple models/modes/schedules, bounds and lane failure isolation |
 | GPU environment differential test | verify: scalar task parity, mixed-lane transitions/reset isolation, Euler branches, command clocks, counters and lane-stable RNG |
 | Python smoke | verify: native loading, binding layouts, actual state advancement |
+| CUDA Python interop | verify: multi-slot/legacy layouts, graph parity/invalidation, reset modes, rejected inputs, stream handoffs, retained exports, GPU policy loop |
 | Upstream logging/Eigen demonstrations | legacy only; printing logs/versions is not a behavioral assertion |
 | CUDA installation smoke | doctor only; routine device contracts already prove kernel launch |
 | Harness tests | fast: process failures/timeouts, oracle tampering, untracked source fingerprints |
@@ -92,9 +100,9 @@ assertions, expected results computed by the implementation under test, and
 noisy one-shot performance assertions. Docs-only edits need review/link checks,
 not new simulator tests. Keep frozen upstream tests intact for investigation.
 
-No performance thresholds exist before dynamics kernels. The separate
+The separate
 [flightmare-profile package](../flightmare-profile/README.md) now measures runtime
-and lifecycle workloads with warmup, repeated samples, fixed E/A capacities,
+through policy workloads with warmup, repeated samples, fixed E/A capacities,
 boundary synchronization, source identity, memory accounting, CUDA call counts,
 and optional independent Nsight traces. Run it outside normal checks:
 
@@ -102,9 +110,11 @@ and optional independent Nsight traces. Run it outside normal checks:
 docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --iterations 500 --samples 7 --trace
 ```
 
-Its analysis tests are documented in the package README. Add actual control
-intervals and query workloads as implemented, then establish machine-specific
-baselines. Review threshold changes. Do not put noisy timing assertions or a
+Its analysis tests and Python/graph workload commands are documented in the
+package README. Use matched machine-specific reports with `--baseline` and
+`--max-wall-ratio 1.15` as an explicit performance gate. CUDA-6 Python residency
+validation also requires `--trace`; allocator deltas alone are insufficient.
+Add query workloads when implemented. Review threshold changes. Do not put noisy timing assertions or a
 speculative benchmark matrix in routine checks.
 
 ## Oracle integrity

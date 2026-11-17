@@ -38,6 +38,9 @@ the optimized CPU comparison and measured limits.
 CUDA-5 adds native environment stepping and device episode resets; its
 [systems evidence](flightlib-cuda/docs/cuda5-performance.md) compares task/reset
 fusion and explains the optional matched wall-time regression gate.
+CUDA-6 adds [resident PyTorch integration and graph replay](flightlib-cuda/python/README.md);
+its [performance evidence](flightlib-cuda/docs/cuda6-performance.md) measures actual
+Python stepping and a small GPU policy loop, including remaining overhead.
 
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and

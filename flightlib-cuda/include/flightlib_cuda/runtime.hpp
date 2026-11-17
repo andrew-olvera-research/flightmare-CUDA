@@ -72,7 +72,14 @@ struct RuntimeViews {
   CollisionFlags collisions;
 };
 
-namespace detail { struct RuntimeStorage; }
+namespace detail { struct RuntimeStorage; struct GraphStorage; }
+class Graph {
+ public:
+  Graph() = default;
+ private:
+  friend class Simulation;
+  std::shared_ptr<detail::GraphStorage> storage_;
+};
 
 class Bindings {
  public:
@@ -111,10 +118,20 @@ class Simulation {
   void enqueue(Launch launch, void* context = nullptr, const Bindings* inputs = nullptr);
   void enqueueOn(cudaStream_t stream, Launch launch, void* context = nullptr,
                  const Bindings* inputs = nullptr);
+  // Framework bridge: persistent events order producer -> private stream ->
+  // producer. Default streams are allowed here, never captured implicitly.
+  void enqueueFrom(cudaStream_t producer, Launch, void* context=nullptr, const Bindings* inputs=nullptr);
+  void enqueueSetup(Launch, void* context=nullptr); // invalidates captured schedules
+  Graph capture(Launch, void* context=nullptr, const Bindings* inputs=nullptr);
+  void replay(const Graph&);
+  void replayFrom(const Graph&,cudaStream_t producer);
+  void waitOn(cudaStream_t consumer) const;
+  void recordUsage(cudaStream_t consumer);
   // Explicit completion boundary for snapshots/errors. Not part of step.
   void synchronize() const;
   std::uint64_t submissions() const;
  private:
+  void submit(cudaStream_t,Launch,void*,const Bindings*,bool bridge,bool setup,const Graph* graph=nullptr);
   std::shared_ptr<detail::RuntimeStorage> storage_;
 };
 

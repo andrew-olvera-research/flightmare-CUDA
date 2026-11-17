@@ -138,6 +138,15 @@ def execute(profile, runner):
         runner.run('lifecycle-parity', ['ctest', '--test-dir', '/build/flightlib-cuda-contracts',
                    '-R', '^flightlib_cuda.(lifecycle|dynamics|environment)_parity$', '--no-tests=error',
                    '--output-on-failure', '--output-junit', str(runner.directory / 'lifecycle.xml')])
+        cuda_python = '/build/flightlib-cuda-python/bin/python'
+        if not Path(cuda_python).exists():
+            raise RuntimeError('Run docker compose exec -T dev bash scripts/setup-cuda-python.sh first')
+        runner.cmake('cuda-python', 'flightlib-cuda', '/build/flightlib-cuda-python-native',
+                     ['-DBUILD_TESTING=OFF', '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON',
+                      '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON', f'-DPython_EXECUTABLE={cuda_python}', *cuda_options])
+        runner.run('cuda-python-parity', [cuda_python, '-m', 'pytest', '-q',
+                   'flightlib-cuda/python/tests', f'--junitxml={runner.directory / "cuda-python.xml"}'],
+                   env=dict(os.environ, PYTHONPATH='/build/flightlib-cuda-python-native/python'))
         env = dict(os.environ, PYTHONPATH='/build/flightmare-parity-tests/flightlib')
         runner.run('binding', [sys.executable, '-m', 'pytest', '-q',
                                'docker/smoke/test_flightgym.py',

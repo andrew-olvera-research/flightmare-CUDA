@@ -157,7 +157,7 @@ void configureTask(Simulation& s,const std::vector<TaskConfig>& configs){
   struct Copy {void* dst;const float* src;size_t bytes;};std::array<Copy,4> copies{{
     {s.buffer("task_parameters.action_mean"),mean.data(),mean.size()*4},{s.buffer("task_parameters.action_scale"),scale.data(),scale.size()*4},
     {s.buffer("task_parameters.goal"),goal.data(),goal.size()*4},{s.buffer("task_parameters.reward_coeff"),reward.data(),reward.size()*4}}};
-  s.enqueue([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
+  s.enqueueSetup([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
     auto& copies=*static_cast<std::array<Copy,4>*>(ctx);try{
       for(auto c:copies)if(cudaMemcpyAsync(c.dst,c.src,c.bytes,cudaMemcpyHostToDevice,stream)!=cudaSuccess)throw std::runtime_error("task setup copy failed");
       if(cudaStreamSynchronize(stream)!=cudaSuccess)throw std::runtime_error("task setup completion failed");
@@ -166,19 +166,28 @@ void configureTask(Simulation& s,const std::vector<TaskConfig>& configs){
 }
 Bindings bindTaskInputs(Simulation& s,BindingRequest action,BindingRequest selected,BindingRequest x,BindingRequest time){
   auto shapes=schemas(s);std::vector<BindingRequest> inputs{action,selected,x,time};for(int i=0;i<4;++i)inputs[i].expected=shapes[i];return s.bind(std::move(inputs));}
-void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);
-  s.enqueue([](const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
-    resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false);
-  },&source,&b);
+namespace {
+struct EnvironmentContext {ResetSource source;TaskExecution execution;};
+void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
+  auto ctx=*static_cast<EnvironmentContext*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
+  prepareActions<<<blocks,128,0,stream>>>(v,in);detail::launchDynamics(v,stream,v.task_output.valid.data);
+  if(ctx.execution==TaskExecution::FusedReset)taskKernel<true><<<blocks,128,0,stream>>>(v,in,ctx.source);
+  else {taskKernel<false><<<blocks,128,0,stream>>>(v,in,ctx.source);resetKernel<<<blocks,128,0,stream>>>(v,in,ctx.source,true);}
 }
-void stepEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){validate(s,b);validateSource(source);
-  if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset)throw std::invalid_argument("unknown task execution");
-  struct Context {ResetSource source;TaskExecution execution;};Context ctx{source,execution};
-  s.enqueue([](const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
-    auto ctx=*static_cast<Context*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
-    prepareActions<<<blocks,128,0,stream>>>(v,in);detail::launchDynamics(v,stream,v.task_output.valid.data);
-    if(ctx.execution==TaskExecution::FusedReset)taskKernel<true><<<blocks,128,0,stream>>>(v,in,ctx.source);
-    else {taskKernel<false><<<blocks,128,0,stream>>>(v,in,ctx.source);resetKernel<<<blocks,128,0,stream>>>(v,in,ctx.source,true);}
-  },&ctx,&b);
+void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
+  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false);
+}
+void validateExecution(TaskExecution execution){if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset)throw std::invalid_argument("unknown task execution");}
+}
+void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);s.enqueue(resetLaunch,&source,&b);}
+void resetEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){validate(s,b);validateSource(source);s.enqueueFrom(stream,resetLaunch,&source,&b);}
+void stepEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){
+  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};s.enqueue(environmentLaunch,&ctx,&b);
+}
+void stepEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source,TaskExecution execution){
+  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};s.enqueueFrom(stream,environmentLaunch,&ctx,&b);
+}
+Graph captureEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){
+  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};return s.capture(environmentLaunch,&ctx,&b);
 }
 }

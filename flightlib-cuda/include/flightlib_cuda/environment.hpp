@@ -20,4 +20,9 @@ void resetEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Expli
 // Three launches by default, four for the reference split T/R path. No host decisions.
 void stepEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Random,
                      TaskExecution=TaskExecution::FusedReset);
+void stepEnvironmentFrom(Simulation&,const Bindings&,cudaStream_t,
+                         ResetSource=ResetSource::Random,TaskExecution=TaskExecution::FusedReset);
+void resetEnvironmentFrom(Simulation&,const Bindings&,cudaStream_t,ResetSource=ResetSource::Explicit);
+Graph captureEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Random,
+                         TaskExecution=TaskExecution::FusedReset);
 }

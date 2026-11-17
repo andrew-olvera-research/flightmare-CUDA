@@ -18,12 +18,13 @@ void check(cudaError_t result, const char* operation) {
   }
 }
 struct DeviceGuard {
-  int prior{};
+  int prior{};bool changed{};
   explicit DeviceGuard(int device) {
     check(cudaGetDevice(&prior), "get device");
-    check(cudaSetDevice(device), "select device");
+    if(prior!=device)check(cudaSetDevice(device), "select device");
+    changed=prior!=device;
   }
-  ~DeviceGuard() { cudaSetDevice(prior); }
+  ~DeviceGuard() { if(changed)cudaSetDevice(prior); }
 };
 Offset add(Offset a, Offset b) {
   if (b > std::numeric_limits<Offset>::max() - a)
@@ -107,7 +108,9 @@ struct RuntimeStorage {
   RuntimeViews views{};
   void* arena{};
   cudaStream_t stream{};
-  cudaEvent_t tail{};
+  cudaEvent_t tail{},ready{};
+  cudaStream_t last{};
+  std::uint64_t generation{0};
   mutable std::mutex mutex;
   bool poisoned{false};
   std::atomic<std::uint64_t> submissions{0};
@@ -124,8 +127,22 @@ struct RuntimeStorage {
     if (stream) cudaStreamSynchronize(stream); // also covers partial initialization
     if (arena) cudaFree(arena);
     if (tail) cudaEventDestroy(tail);
+    if (ready) cudaEventDestroy(ready);
     if (stream) cudaStreamDestroy(stream);
     external_owners.clear(); // Release registered allocations only after completion.
+    cudaSetDevice(prior);
+  }
+};
+struct GraphStorage {
+  std::shared_ptr<RuntimeStorage> owner;
+  cudaGraph_t graph{};cudaGraphExec_t executable{};std::uint64_t generation{};
+  ~GraphStorage(){
+    if(!owner)return;
+    std::lock_guard<std::mutex> lock(owner->mutex);
+    int prior=0;cudaGetDevice(&prior);cudaSetDevice(owner->device);
+    cudaEventSynchronize(owner->tail);
+    if(executable)cudaGraphExecDestroy(executable);
+    if(graph)cudaGraphDestroy(graph);
     cudaSetDevice(prior);
   }
 };
@@ -164,6 +181,7 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->plan = std::move(layout);
   check(cudaStreamCreateWithFlags(&s->stream, cudaStreamNonBlocking), "create stream");
   check(cudaEventCreateWithFlags(&s->tail, cudaEventDisableTiming), "create completion event");
+  check(cudaEventCreateWithFlags(&s->ready, cudaEventDisableTiming), "create producer event");
   check(cudaMalloc(&s->arena, s->plan.arena_bytes), "allocate runtime arena");
   std::size_t cursor = 0;
 #define FLC_BUFFER(member, type, category, ...) assign(s->views.member, s->arena, s->plan.buffers.at(cursor++));
@@ -176,6 +194,7 @@ Simulation::Simulation(const RuntimeConfig& config) {
   initialize<<<static_cast<unsigned>((count + 255) / 256), 256, 0, s->stream>>>(s->views, config.seed);
   check(cudaGetLastError(), "initialize views");
   check(cudaEventRecord(s->tail, s->stream), "record initialization");
+  s->last=s->stream;
   storage_ = std::move(s);
 }
 
@@ -246,39 +265,86 @@ Bindings Simulation::bind(std::vector<BindingRequest> requests) const {
 void Simulation::enqueue(Launch launch, void* context, const Bindings* inputs) {
   enqueueOn(storage_->stream, launch, context, inputs);
 }
-void Simulation::enqueueOn(cudaStream_t stream, Launch launch, void* context, const Bindings* inputs) {
-  auto& s = *storage_;
-  std::unique_lock<std::mutex> lock(s.mutex, std::try_to_lock);
-  if (!lock.owns_lock()) throw std::logic_error("concurrent simulation submission");
-  if (s.poisoned) throw std::logic_error("simulation launch failed; destroy and recreate runtime");
-  if (!launch || !stream || (inputs && inputs->owner_ != storage_))
-    throw std::invalid_argument("invalid launch, stream, or foreign bindings");
-  DeviceGuard guard(s.device);
-  int stream_device = -1;
-  check(cudaStreamGetDevice(stream, &stream_device), "inspect stream device");
-  unsigned flags = 0;
-  check(cudaStreamGetFlags(stream, &flags), "inspect stream flags");
-  if (stream_device != s.device || !(flags & cudaStreamNonBlocking))
-    throw std::invalid_argument("stream must be explicit, nonblocking, and on simulation device");
-  cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
-  check(cudaStreamIsCapturing(stream, &capture), "inspect stream capture");
-  if (capture != cudaStreamCaptureStatusNone)
-    throw std::invalid_argument("graph capture is not supported by the CUDA-2 runtime");
-  static const std::vector<BindingRequest> empty;
-  // Reusing the event is safe: each wait snapshots the preceding record, before
-  // the next record. Host serialization prevents record/wait races.
-  check(cudaStreamWaitEvent(stream, s.tail, 0), "wait for previous simulation use");
-  try {
-    launch(s.views, stream, inputs ? inputs->inputs_ : empty, context);
-    check(cudaGetLastError(), "simulation launch");
-    check(cudaEventRecord(s.tail, stream), "record simulation completion");
-    ++s.submissions;
-  } catch (...) {
-    s.poisoned = true; // Arbitrary callbacks cannot provide transactional rollback.
-    if (cudaEventRecord(s.tail, stream) != cudaSuccess) cudaStreamSynchronize(stream);
-    throw;
-  }
+void Simulation::enqueueOn(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs){
+  submit(stream,launch,context,inputs,false,false);
 }
+void Simulation::enqueueFrom(cudaStream_t producer,Launch launch,void* context,const Bindings* inputs){
+  submit(producer,launch,context,inputs,true,false);
+}
+void Simulation::enqueueSetup(Launch launch,void* context){submit(storage_->stream,launch,context,nullptr,false,true);}
+void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs,bool bridge,bool setup,const Graph* graph){
+  auto& s=*storage_;std::unique_lock<std::mutex> lock(s.mutex,std::try_to_lock);
+  if(!lock.owns_lock())throw std::logic_error("concurrent simulation submission");
+  if(s.poisoned)throw std::logic_error("simulation launch failed; recreate runtime");
+  if(!launch||(!bridge&&!stream)||(inputs&&inputs->owner_!=storage_))throw std::invalid_argument("invalid launch, stream, or foreign bindings");
+  if(graph&&(!graph->storage_||graph->storage_->owner!=storage_||graph->storage_->generation!=s.generation))
+    throw std::invalid_argument("foreign or stale graph; recapture after configuration changes");
+  DeviceGuard guard(s.device);
+  if(stream!=s.stream){
+    int device=-1;check(cudaStreamGetDevice(stream,&device),"inspect stream device");
+    unsigned flags=0;check(cudaStreamGetFlags(stream,&flags),"inspect stream flags");
+    if(device!=s.device||(!bridge&&!(flags&cudaStreamNonBlocking)))throw std::invalid_argument("invalid external stream");
+  }
+  cudaStreamCaptureStatus capture=cudaStreamCaptureStatusNone;
+  check(cudaStreamIsCapturing(stream,&capture),"inspect stream capture");
+  if(capture!=cudaStreamCaptureStatusNone)throw std::invalid_argument("external capture unsupported; use explicit capture API");
+  static const std::vector<BindingRequest> empty;
+  cudaStream_t target=bridge?s.stream:stream;
+  if(setup)++s.generation;
+  try{
+    if(bridge){check(cudaEventRecord(s.ready,stream),"record producer");check(cudaStreamWaitEvent(target,s.ready,0),"wait producer");}
+    // Elide only on the private stream: external handles can be destroyed/reused.
+    if(target!=s.stream||s.last!=s.stream)check(cudaStreamWaitEvent(target,s.tail,0),"wait previous use");
+    launch(s.views,target,inputs?inputs->inputs_:empty,context);
+    check(cudaGetLastError(),"simulation launch");
+    check(cudaEventRecord(s.tail,target),"record completion");s.last=target;
+    if(bridge)check(cudaStreamWaitEvent(stream,s.tail,0),"wait simulation output");
+    ++s.submissions;
+  }catch(...){s.poisoned=true;if(cudaEventRecord(s.tail,target)!=cudaSuccess)cudaStreamSynchronize(target);s.last=target;throw;}
+}
+Graph Simulation::capture(Launch launch,void* context,const Bindings* inputs){
+  auto& s=*storage_;std::unique_lock<std::mutex> lock(s.mutex,std::try_to_lock);
+  if(!lock.owns_lock())throw std::logic_error("concurrent graph capture");
+  if(s.poisoned)throw std::logic_error("poisoned simulation");
+  if(!launch||(inputs&&inputs->owner_!=storage_))throw std::invalid_argument("invalid capture inputs");
+  DeviceGuard guard(s.device);
+  const auto drained=cudaEventSynchronize(s.tail);
+  if(drained!=cudaSuccess)s.poisoned=true;
+  check(drained,"capture setup drain");
+  // Allocate host ownership before creating CUDA resources, so allocation failure
+  // cannot leak an instantiated graph.
+  auto graph_storage=std::make_shared<detail::GraphStorage>();
+  cudaGraph_t captured=nullptr;cudaGraphExec_t executable=nullptr;
+  check(cudaStreamBeginCapture(s.stream,cudaStreamCaptureModeThreadLocal),"begin capture");
+  static const std::vector<BindingRequest> empty;
+  try{launch(s.views,s.stream,inputs?inputs->inputs_:empty,context);check(cudaGetLastError(),"capture launch");}
+  catch(...){cudaStreamEndCapture(s.stream,&captured);if(captured)cudaGraphDestroy(captured);throw;}
+  check(cudaStreamEndCapture(s.stream,&captured),"end capture");
+  auto result=cudaGraphInstantiate(&executable,captured,0);
+  if(result!=cudaSuccess){cudaGraphDestroy(captured);check(result,"instantiate graph");}
+  Graph out;out.storage_=std::move(graph_storage);
+  out.storage_->owner=storage_;out.storage_->graph=captured;out.storage_->executable=executable;out.storage_->generation=s.generation;
+  // No kernel executes during capture. First replay upload costs belong to warmup.
+  return out;
+}
+namespace {
+void graphLaunch(const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* context){
+  check(cudaGraphLaunch(static_cast<detail::GraphStorage*>(context)->executable,stream),"graph replay");
+}
+void noop(const RuntimeViews&,cudaStream_t,const std::vector<BindingRequest>&,void*){}
+}
+void Simulation::replay(const Graph& graph){submit(storage_->stream,graphLaunch,graph.storage_.get(),nullptr,false,false,&graph);}
+void Simulation::replayFrom(const Graph& graph,cudaStream_t stream){submit(stream,graphLaunch,graph.storage_.get(),nullptr,true,false,&graph);}
+void Simulation::waitOn(cudaStream_t stream) const{
+  auto& s=*storage_;std::unique_lock<std::mutex> lock(s.mutex,std::try_to_lock);
+  if(!lock.owns_lock())throw std::logic_error("concurrent consumer wait");
+  if(s.poisoned)throw std::logic_error("poisoned simulation");
+  DeviceGuard guard(s.device);int device=-1;check(cudaStreamGetDevice(stream,&device),"inspect consumer");
+  cudaStreamCaptureStatus status;check(cudaStreamIsCapturing(stream,&status),"inspect consumer capture");
+  if(device!=s.device||status!=cudaStreamCaptureStatusNone)throw std::invalid_argument("invalid consumer stream");
+  check(cudaStreamWaitEvent(stream,s.tail,0),"consumer wait");
+}
+void Simulation::recordUsage(cudaStream_t stream){enqueueFrom(stream,noop);}
 void Simulation::synchronize() const {
   auto& s = *storage_;
   std::unique_lock<std::mutex> lock(s.mutex, std::try_to_lock);

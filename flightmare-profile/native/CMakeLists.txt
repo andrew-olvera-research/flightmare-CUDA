@@ -10,7 +10,7 @@ target_link_libraries(profile_driver PRIVATE flightlib_cuda::runtime)
 set_target_properties(profile_driver PROPERTIES CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON)
 foreach(api cudaMalloc cudaFree cudaMallocAsync cudaFreeAsync cudaMemcpy cudaMemcpyAsync
             cudaDeviceSynchronize cudaStreamSynchronize cudaEventSynchronize cudaLaunchKernel __cudaLaunchKernel
-            cudaStreamWaitEvent cudaEventRecord cudaGetDevice cudaSetDevice cudaStreamGetDevice
+            cudaGraphLaunch cudaStreamWaitEvent cudaEventRecord cudaGetDevice cudaSetDevice cudaStreamGetDevice
             cudaStreamGetFlags cudaStreamIsCapturing cudaGetLastError)
   target_link_options(profile_driver PRIVATE "LINKER:--wrap=${api}")
 endforeach()
