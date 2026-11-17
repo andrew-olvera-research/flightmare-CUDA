@@ -26,3 +26,7 @@
 
 Geometry remains a subsequent layer; this
 version does not imply complete integrated Flightmare parity.
+
+- Post-CUDA-6: matched optimized CPU OpenMP/multiprocessing versus GPU environment
+  benchmark, worker-affinity safeguards, behavior gates and collision-first
+  CUDA-7 planning. No simulation equations or frozen tensor contracts changed.

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from flightmare_profile.__main__ import summarize, trace_summary, performance_gate, launches, validate_memory_trace
+from flightmare_profile.cpu_parallel import validate
 
 
 class EvidenceTests(unittest.TestCase):
@@ -90,6 +91,18 @@ class PerformanceGateTests(unittest.TestCase):
 
 
 class GraphEvidenceTests(unittest.TestCase):
+    def test_parallel_comparison_rejects_behavior_mismatch(self):
+        reference={'output':[0.0]*26,'resets':10}
+        validate(reference,copy.deepcopy(reference))
+        for index,value in ((2,.1),(24,float('nan')),(25,1)):
+            actual=copy.deepcopy(reference);actual['output'][index]=value
+            with self.assertRaises(ValueError): validate(reference,actual)
+        actual=copy.deepcopy(reference);actual['resets']=9
+        with self.assertRaises(ValueError): validate(reference,actual)
+        actual=copy.deepcopy(reference);worker=copy.deepcopy(reference);worker['output'][0]=1
+        actual['worker_outputs']=[worker]
+        with self.assertRaises(ValueError): validate(reference,actual)
+
     def test_policy_scratch_budget_never_allows_transfers(self):
         trace = {'memory_events': {'CUPTI_ACTIVITY_KIND_MEMCPY': 0, 'CUPTI_ACTIVITY_KIND_MEMSET': 10},
                  'memset_bytes': 10240, 'memset_nonzero_events': 0}

@@ -33,4 +33,12 @@ if(PROFILE_CPU_BASELINE)
   target_compile_options(cpu_baseline PRIVATE -march=native)
   target_link_libraries(cpu_baseline PRIVATE flightlib_cuda::runtime cpu_optimized
     Eigen3::Eigen yaml-cpp::yaml-cpp OpenMP::OpenMP_CXX ${OpenCV_LIBRARIES} zmq zmqpp stdc++fs)
+  set_target_properties(cpu_optimized PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  file(GLOB BENCH_BRIDGES ../../flightlib/src/bridges/*.cpp)
+  add_library(cpu_environment SHARED cpu_environment.cpp
+    ../../flightlib/src/envs/env_base.cpp ../../flightlib/src/envs/quadrotor_env/quadrotor_env.cpp ${BENCH_BRIDGES})
+  target_include_directories(cpu_environment PRIVATE ../../flightlib/include ${OpenCV_INCLUDE_DIRS})
+  target_compile_definitions(cpu_environment PRIVATE EIGEN_STACK_ALLOCATION_LIMIT=1048576)
+  target_compile_options(cpu_environment PRIVATE -O3 -fno-fast-math -ffp-contract=off -march=native)
+  target_link_libraries(cpu_environment PRIVATE cpu_optimized Eigen3::Eigen yaml-cpp::yaml-cpp OpenMP::OpenMP_CXX ${OpenCV_LIBRARIES} zmq zmqpp stdc++fs)
 endif()

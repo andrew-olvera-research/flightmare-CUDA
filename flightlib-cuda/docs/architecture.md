@@ -9,6 +9,15 @@ environment stepping, task outputs and episode resets. CUDA-6 adds resident
 PyTorch bindings, explicit graph replay and GPU policy stream handoffs.
 Geometry remains a subsequent layer.
 
+Post-CUDA-6 review: the [parallel CPU baseline](cpu-parallel-performance.md)
+supports retaining the resident/fused architecture. Per user clarification,
+the next layer prioritizes collision state and overlap queries; rendering and
+sensing are separate. The [collision-first CUDA-7 plan](cuda7-collision-plan.md)
+proposes pulling proxy/overlap semantics and a minimal validated collision path
+forward from CUDA-8. Frozen ray contracts remain available for optional future
+implementation; they do not determine the current backend choice. The historical
+sequence below is superseded by that planning note where it prioritizes rays.
+
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
 their semantics. Changes to field meaning, dtype, tensor shape, indexing,

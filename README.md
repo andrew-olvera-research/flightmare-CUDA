@@ -41,6 +41,10 @@ fusion and explains the optional matched wall-time regression gate.
 CUDA-6 adds [resident PyTorch integration and graph replay](flightlib-cuda/python/README.md);
 its [performance evidence](flightlib-cuda/docs/cuda6-performance.md) measures actual
 Python stepping and a small GPU policy loop, including remaining overhead.
+The [parallel CPU comparison](flightlib-cuda/docs/cpu-parallel-performance.md)
+sweeps OpenMP and multiprocessing against matched GPU environment stepping.
+Next is a [collision-first geometry qualification](flightlib-cuda/docs/cuda7-collision-plan.md);
+rendering and sensing remain separate.
 
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and

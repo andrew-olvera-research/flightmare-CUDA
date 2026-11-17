@@ -166,6 +166,34 @@ memory and register metadata are reported but do not substitute for Nsight
 Compute's spill/occupancy metrics. Missing memcpy/memset tables mean no recorded
 events of those types only after runtime and kernel trace data are verified.
 
+## Parallel CPU comparison
+
+Use the production Python GPU graph path against optimized unchanged Flightlib
+environments, with both in-process OpenMP and persistent spawned workers:
+
+```sh
+docker compose exec -T -e OMP_PROC_BIND=spread -e OMP_PLACES=cores -e OPENBLAS_NUM_THREADS=1 -e PYTHONPATH=/workspace/flightmare-profile dev /build/flightlib-cuda-python/bin/python -m flightmare_profile.cpu_parallel --lanes 33,1024,16384 --workers 1,2,4,8,16 --chunks 1,100 --iterations 100 --samples 5 --control-dt .05
+```
+
+Requires `scripts/setup-cuda-python.sh`. Builds are requested under the common
+local build lock. The benchmark runs optimized dynamics parity and a one-lane
+matched-output preflight before the sweep. Each case also checks output/reset
+agreement. `--modes thread` selects only OpenMP; `--actions=-1` selects reset
+stress, and `--control-dt .02` matches the original environment timestep.
+The default second action is an asymmetric flight workload at dt=.05; at shorter
+intervals the legacy ground-reset terminal condition may prevent lift-off.
+
+Chunk=1 measures completed-step latency; chunk=100 amortizes completion across
+100 steps. Actions/state/outputs stay local on both sides. There is no CPU policy
+upload or worker-output serialization penalty. Pick the best measured CPU median
+across worker counts, not the sequential CPU or a fixed process count. Initialization
+can be expensive at large batches and is reported outside timing. Worker affinity
+is explicitly restored to avoid inheriting an OpenMP-pinned coordinator core.
+
+Reports and partial progress live in `.local-ci/cpu-parallel-<timestamp>/`.
+A failed/interrupted report is not performance evidence. See
+[the measured comparison and limitations](../flightlib-cuda/docs/cpu-parallel-performance.md).
+
 ## Invariants and extension points
 
 The harness fails on functional result mismatch, wrong launch counts, hot-loop
