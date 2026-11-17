@@ -22,7 +22,7 @@ int main(int argc,char** argv){try{
   if(argc==5){
     int N=std::stoi(argv[1]),steps=std::stoi(argv[2]),warmup=std::stoi(argv[3]),samples=std::stoi(argv[4]);
     std::vector<std::unique_ptr<flightlib::Quadrotor>> cpu;
-    for(int n=0;n<N;++n){cpu.emplace_back(std::make_unique<flightlib::Quadrotor>(flightlib::QuadrotorDynamics{}));
+    for(int n=0;n<N;++n){cpu.emplace_back(std::make_unique<flightlib::Quadrotor>(flightlib::QuadrotorDynamics(1.f,.25f)));
       flightlib::QuadState x;x.setZero();x.p.z()=5;x.t=2;cpu.back()->reset(x);
       cpu.back()->setCommand(flightlib::Command(0,flightlib::Vector<4>::Constant(3)));}
     for(int i=0;i<warmup;++i)for(auto& q:cpu)q->run(.01f);

@@ -1,4 +1,5 @@
 #include "flightlib_cuda/dynamics.hpp"
+#include "dynamics_launch.hpp"
 namespace flightlib_cuda::v1 {
 namespace {
 __device__ float clamp(float x,float a,float b){return fminf(b,fmaxf(a,x));}
@@ -19,9 +20,10 @@ __device__ void derivative(const float* x,const float* acc,const float* torque,
   d[6]=0.5f*(c*w+b*qx-a*qy);
 }
 __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyView topo,
-                              QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status){
+                              QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status,const Mask* enabled){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;
   if(n>=topo.batch.lanes)return;
+  if(enabled&&!enabled[n])return;
   if(!topo.active(n)){status(n)=LaneStatus::Inactive;return;}
   float x[25],omega[4],thrust[4],command[4];
   bool valid=isfinite(state.time(n));
@@ -114,7 +116,10 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   state.time(n)=time;status(n)=LaneStatus::Ok;
 }
 }
+void detail::launchDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled){
+  dynamicsKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+}
 void stepDynamics(Simulation& s){s.enqueue([](const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>&,void*){
-  dynamicsKernel<<<(v.topology.batch.lanes+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status);
+  detail::launchDynamics(v,stream);
 });}
 }

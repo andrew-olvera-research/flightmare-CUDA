@@ -1,4 +1,4 @@
-#include "flightlib_cuda/dynamics.hpp"
+#include "flightlib_cuda/environment.hpp"
 #include <cuda_runtime.h>
 #include <cuda_profiler_api.h>
 #include <chrono>
@@ -49,27 +49,38 @@ void touchLaunch(const RuntimeViews& v,cudaStream_t s,const std::vector<BindingR
 }
 void marker(const RuntimeViews&,cudaStream_t s,const std::vector<BindingRequest>&,void* p){check(cudaEventRecord(*static_cast<cudaEvent_t*>(p),s));}
 int main(int argc,char** argv){try{
- if(argc!=10)throw std::invalid_argument("E A iterations samples warmup workload active_percent trace control_dt");
+ if(argc!=11)throw std::invalid_argument("E A iterations samples warmup workload active_percent trace control_dt reset_percent");
  Index E=std::stoul(argv[1]),A=std::stoul(argv[2]);int iterations=std::stoi(argv[3]),samples=std::stoi(argv[4]),warmup=std::stoi(argv[5]);
- std::string workload=argv[6];int percent=std::stoi(argv[7]);bool trace=std::stoi(argv[8]);float control_dt=std::stof(argv[9]);
- if(iterations<1||samples<1||warmup<0||percent<0||percent>100)throw std::invalid_argument("invalid measurement dimensions");
- if(workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics")throw std::invalid_argument("unknown workload");
- auto setup_begin=Clock::now();RuntimeConfig config;config.environments=E;config.slots=A;config.substeps=workload=="dynamics"?prepareSchedule(control_dt).size():0;
+ std::string workload=argv[6];int percent=std::stoi(argv[7]);bool trace=std::stoi(argv[8]);float control_dt=std::stof(argv[9]);int reset_percent=std::stoi(argv[10]);bool environment=workload.rfind("environment",0)==0;
+ if(iterations<1||samples<1||warmup<0||percent<0||percent>100||reset_percent<0||reset_percent>100)throw std::invalid_argument("invalid measurement dimensions");
+ if(workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random")throw std::invalid_argument("unknown workload");
+ auto setup_begin=Clock::now();RuntimeConfig config;config.environments=E;config.slots=A;config.substeps=(workload=="dynamics"||environment)?prepareSchedule(control_dt).size():0;
  Simulation sim(config);Index N=sim.views().topology.batch.lanes;
  std::vector<Mask> active(N),selected(N,1);for(Index i=0;i<N;++i)active[i]=(i%100)<static_cast<Index>(percent);
  std::vector<Scalar> bounds(6ULL*N);for(Index c=0;c<6;++c)for(Index i=0;i<N;++i)bounds[c*N+i]=(c%2)?100:-100;
- configure(sim,{ModelConfig{}},std::vector<Index>(N,0),active,bounds,workload=="dynamics"?control_dt:0);
+ if(environment)for(Index i=0;i<N;++i)bounds[4ULL*N+i]=0;
+ configure(sim,{ModelConfig{}},std::vector<Index>(N,0),active,bounds,(workload=="dynamics"||environment)?control_dt:0);
  std::vector<Scalar> state(25ULL*N,0),time(N,2),payload(4ULL*N,3);
  for(Index i=0;i<N;++i){state[i]=workload=="dynamics"?0:7;state[2ULL*N+i]=workload=="dynamics"?5:0;state[3ULL*N+i]=1;}
+ if(environment)for(Index i=0;i<N;++i){state[i]=0;state[2ULL*N+i]=(i%100)<Index(reset_percent)?0:50;time[i]=0;}
  auto selection=input(selected,DType::UInt8,{N});
  auto states=bindStateInput(sim,selection,input(state,DType::Float32,{25,N}),input(time,DType::Float32,{N}));
  auto commands=bindCommandInput(sim,selection,input(std::vector<CommandMode>(N,CommandMode::RotorThrust),DType::UInt8,{N}),input(time,DType::Float32,{N}),input(payload,DType::Float32,{4,N}));
  if(workload=="dynamics"){resetState(sim,states);setCommand(sim,commands);}
+ Bindings task;ResetSource source=workload=="environment-random"?ResetSource::Random:ResetSource::Explicit;
+ TaskExecution execution=workload=="environment-split"?TaskExecution::SeparateReset:TaskExecution::FusedReset;
+ if(environment){
+   configureTask(sim,{TaskConfig{}});std::vector<float> actions(4ULL*N);
+   for(Index i=0;i<N;++i)for(int c=0;c<4;++c)actions[4ULL*i+c]=(i%100)<Index(reset_percent)?-1:0;
+   task=bindTaskInputs(sim,input(actions,DType::Float32,{E,A,4}),selection,states.inputs()[1],states.inputs()[2]);
+   resetEnvironment(sim,task);
+ }
  cudaStream_t direct;check(cudaStreamCreateWithFlags(&direct,cudaStreamNonBlocking));
  cudaEvent_t start,end;check(cudaEventCreate(&start));check(cudaEventCreate(&end));sim.synchronize();
  const double setup_ms=ms(setup_begin,Clock::now());
  auto step=[&]{
-   if(workload=="dynamics")stepDynamics(sim);
+   if(environment)stepEnvironment(sim,task,source,execution);
+   else if(workload=="dynamics")stepDynamics(sim);
    else if(workload=="direct")touch<<<(N+127)/128,128,0,direct>>>(sim.views().state.x.data,N);
    else if(workload=="runtime")sim.enqueue(touchLaunch);
    else if(workload=="dispatch")sim.enqueue([](const RuntimeViews&,cudaStream_t,const std::vector<BindingRequest>&,void*){});
@@ -79,7 +90,7 @@ int main(int argc,char** argv){try{
  };
  for(int i=0;i<warmup;++i)step();check(cudaStreamSynchronize(direct));sim.synchronize();
  std::cout<<"{\"schema_version\":1,\"active_lanes\":"<<std::count(active.begin(),active.end(),Mask{1})<<",\"setup_ms\":"<<setup_ms<<",\"arena_bytes\":"<<sim.allocationPlan().arena_bytes
-   <<",\"payload_bytes\":"<<sim.allocationPlan().payload_bytes<<",\"external_input_bytes\":"<<126ULL*N
+   <<",\"payload_bytes\":"<<sim.allocationPlan().payload_bytes<<",\"external_input_bytes\":"<<(environment?142ULL:126ULL)*N
    <<",\"samples\":[";
  for(int sample=0;sample<samples;++sample){
    if(trace)check(cudaProfilerStart());
@@ -109,7 +120,24 @@ int main(int argc,char** argv){try{
    float expected=2;for(int i=0;i<warmup+iterations*samples;++i)expected+=control_dt;
    for(Index i=0;i<N;++i)if(statuses[i]!=(active[i]?LaneStatus::Ok:LaneStatus::Inactive)||actual[i]!=(active[i]?expected:0))throw std::runtime_error("dynamics completion mismatch");
  }
- std::cout<<"],\"calls\":{";for(int i=0;i<Count;++i){if(i)std::cout<<',';std::cout<<'"'<<names[i]<<"\":"<<calls[i];}
+ std::uint64_t resets=0,draws=0;unsigned final_done=0;
+ if(environment){
+   std::vector<Mask> valid(N),done(N);std::vector<LaneStatus> status(N);std::vector<std::uint64_t> episodes(N),rng(N);
+   std::vector<float> obs(12ULL*N),reward(N);
+   check(cudaMemcpy(valid.data(),sim.views().task_output.valid.data,N,cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(done.data(),sim.views().task_output.done.data,N,cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(status.data(),sim.views().diagnostics.status.data,N*sizeof(LaneStatus),cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(episodes.data(),sim.views().episodes.episode.data,N*8,cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(rng.data(),sim.views().episodes.random_counter.data,N*8,cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(obs.data(),sim.views().task_output.observation.data,obs.size()*4,cudaMemcpyDeviceToHost));
+   check(cudaMemcpy(reward.data(),sim.views().task_output.reward.data,N*4,cudaMemcpyDeviceToHost));
+   for(Index n=0;n<N;++n){
+     if(valid[n]!=active[n]||status[n]!=(active[n]?LaneStatus::Ok:LaneStatus::Inactive)||!std::isfinite(reward[n])||episodes[n]<active[n]||episodes[n]>std::uint64_t(warmup+iterations*samples+1)||(!active[n]&&(done[n]||reward[n]!=0)))throw std::runtime_error("environment completion mismatch");
+     for(int c=0;c<12;++c)if(!std::isfinite(obs[12ULL*n+c])||(!active[n]&&obs[12ULL*n+c]!=0))throw std::runtime_error("invalid environment observation");
+     resets+=episodes[n]-active[n];draws+=rng[n];final_done+=done[n];
+   }
+ }
+ std::cout<<"],\"auto_resets_including_warmup\":"<<resets<<",\"random_draws\":"<<draws<<",\"final_done_lanes\":"<<final_done<<",\"calls\":{";for(int i=0;i<Count;++i){if(i)std::cout<<',';std::cout<<'"'<<names[i]<<"\":"<<calls[i];}
  std::cout<<"},\"arena_categories\":{";std::map<std::string,Offset> cats;for(auto& b:sim.allocationPlan().buffers)cats[b.category]+=b.bytes;
  bool first=true;for(auto& c:cats){if(!first)std::cout<<',';first=false;std::cout<<'"'<<c.first<<"\":"<<c.second;}
  std::cout<<"},\"validated\":true}\n";

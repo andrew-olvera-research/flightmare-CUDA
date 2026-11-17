@@ -16,5 +16,9 @@
 - [CUDA-4] Fused dynamics, trajectory differential gate, and systems profiler
   stepping/scaling workloads with an optimized strict-FP CPU baseline.
 
-Task logic, policy integration and geometry remain subsequent layers; this
-version does not imply complete Flightmare environment parity.
+- [CUDA-5] Native environment stepping, legacy observation/reward/terminal behavior,
+  explicit and seeded device resets, episode lifecycle parity, reset-density
+  profiling and matched wall-time regression gates.
+
+Policy integration, graph execution and geometry remain subsequent layers; this
+version does not imply complete integrated Flightmare parity.

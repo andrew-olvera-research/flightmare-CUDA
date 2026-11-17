@@ -29,6 +29,36 @@ No cloud infrastructure or Python CUDA framework is required.
 | command | One actual setCommand operation |
 | mixed | setState, setCommand, resetState: three operations, not a physics timestep |
 | dynamics | One real fused control interval; constant rotor commands, configurable control_dt |
+| environment | Raw actions through dynamics, observations/reward/terminal, explicit auto-reset; three launches |
+| environment-split | Same workload, separate T/R reference; four launches |
+| environment-random | Three-launch environment with seeded device random auto-reset |
+
+For CUDA-5 fusion and reset-density comparisons:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads environment,environment-split --reset-percent 50 --iterations 100 --samples 5 --warmup 10 --trace
+```
+
+Use reset-percent 0/50/100 and sparse active-percent runs. Environment probes start
+selected terminal lanes at ground with raw action -1; other lanes start at altitude
+50 with action 0. Explicit auto-reset repeats those samples; random auto-reset
+instead samples the legacy reset distribution and changes subsequent reset density.
+The repeated 100-lane mask is approximate for small batches. Reports include actual
+auto-reset counts (including warmup), random draws and final done count. Functional
+readback checks active validity/status, finite outputs and inactive output isolation.
+The differential suite remains responsible for complete transition parity.
+
+An optional local wall-time gate compares against a prior matched report:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads environment,environment-split --reset-percent 50 --iterations 100 --samples 5 --warmup 10 --baseline /workspace/.local-ci/profile-<baseline>/report.json --max-wall-ratio 1.15
+```
+
+Keep the same cases, toolchain, GPU/driver, sample settings and densities. Failed,
+missing or mismatched evidence cannot pass. A wall-time regression fails the command
+and retains ratios in report.json. This opt-in gate stays outside ordinary verify;
+residency and launch budgets are mandatory on every run. The CPU comparison below
+currently covers dynamics only, not the environment workloads.
 
 CUDA-4 adds actual stepping and an optional **sequential optimized CPU** baseline:
 
@@ -103,7 +133,7 @@ driver/context overhead and peak VRAM are not measured by those byte counts.
 
 Builds are incremental but always requested so stale binaries are not silently
 used. The harness uses the same build-volume lock as local verification; profiling
-is deliberately separate from normal tests. Runtime and oracle code are unchanged.
+is deliberately separate from normal tests. Profiling instrumentation stays in the probe; the frozen CPU oracle is unchanged.
 To validate the analysis logic:
 
 ```sh

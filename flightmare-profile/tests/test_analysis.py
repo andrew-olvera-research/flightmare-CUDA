@@ -1,8 +1,9 @@
+import copy
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from flightmare_profile.__main__ import summarize, trace_summary
+from flightmare_profile.__main__ import summarize, trace_summary, performance_gate, launches
 
 
 class EvidenceTests(unittest.TestCase):
@@ -47,3 +48,32 @@ class EvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(ValueError):
                 trace_summary(Path(directory) / 'empty.sqlite')
+
+
+class PerformanceGateTests(unittest.TestCase):
+    def report(self):
+        return {'status': 'passed', 'gpu_before': 'header\nGPU, UUID, driver, 16000, 30, 1000, 25\n',
+                'cuda_architectures': '120-real', 'cuda': '13.3', 'compiler': 'gcc', 'config': {},
+                'cases': [{'environments': 3, 'slots': 11, 'workload': 'environment',
+                           'timing': {'wall_us_per_iteration': {'median': 20}}}]}
+
+    def test_regression_and_mismatched_evidence_fail(self):
+        baseline = self.report()
+        for change in ('slow', 'config', 'hardware', 'missing', 'failed'):
+            current = self.report(); old = copy.deepcopy(baseline)
+            if change == 'slow': current['cases'][0]['timing']['wall_us_per_iteration']['median'] = 24
+            if change == 'config': current['config']['reset_percent'] = 50
+            if change == 'hardware': current['cuda_architectures'] = 'other'
+            if change == 'missing': old['cases'] = []
+            if change == 'failed': old['status'] = 'failed'
+            with self.assertRaises(ValueError): performance_gate(current, old, 1.15)
+        current = self.report(); performance_gate(current, baseline, 1.15)
+        self.assertTrue(current['performance_gate']['passed'])
+
+    def test_environment_launch_budgets(self):
+        self.assertEqual(launches('environment'), 3)
+        self.assertEqual(launches('environment-split'), 4)
+        self.assertEqual(launches('environment-random'), 3)
+        data = EvidenceTests().result(); data['calls']['kernel_launches'] = 30
+        summarize(data, 10, 1, 'environment')
+        with self.assertRaises(ValueError): summarize(data, 10, 1, 'environment-split')

@@ -35,6 +35,9 @@ initial measurements and implications for kernel fusion and launch overhead.
 CUDA-4 now provides real fused stepping; see its
 [parity and scaling results](flightlib-cuda/docs/cuda4-performance.md), including
 the optimized CPU comparison and measured limits.
+CUDA-5 adds native environment stepping and device episode resets; its
+[systems evidence](flightlib-cuda/docs/cuda5-performance.md) compares task/reset
+fusion and explains the optional matched wall-time regression gate.
 
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and

@@ -33,12 +33,43 @@ def fingerprint(repo):
     return digest.hexdigest()
 
 
+def launches(workload):
+    return {'dispatch': 0, 'mixed': 3, 'environment': 3, 'environment-split': 4, 'environment-random': 3}.get(workload, 1)
+
+
+def performance_gate(report, baseline, limit):
+    if baseline.get('status') != 'passed':
+        raise ValueError('Performance baseline did not pass')
+    def hardware(r):
+        rows = r['gpu_before'].strip().splitlines()[1:]
+        return [row.split(',')[:4] for row in rows], r['cuda_architectures'], r['cuda'], r['compiler']
+    if hardware(report) != hardware(baseline):
+        raise ValueError('Performance baseline hardware/toolchain mismatch')
+    for key, default in [('iterations', 1000), ('samples', 7), ('warmup', 100), ('active_percent', 100), ('control_dt', .01), ('reset_percent', 0)]:
+        if report['config'].get(key, default) != baseline['config'].get(key, default):
+            raise ValueError('Performance baseline configuration mismatch: ' + key)
+    key = lambda c: (c['environments'], c['slots'], c['workload'])
+    old = {key(c): c for c in baseline['cases']}
+    ratios = []
+    for c in report['cases']:
+        if key(c) not in old:
+            raise ValueError('Missing workload in performance baseline')
+        prior = old[key(c)]['timing']['wall_us_per_iteration']['median']
+        if not math.isfinite(prior) or prior <= 0:
+            raise ValueError('Invalid baseline wall timing')
+        ratio = c['timing']['wall_us_per_iteration']['median'] / prior
+        ratios.append({'case': key(c), 'wall_ratio': ratio})
+    report['performance_gate'] = {'limit': limit, 'ratios': ratios, 'passed': all(r['wall_ratio'] <= limit for r in ratios)}
+    if not report['performance_gate']['passed']:
+        raise ValueError('Wall-time performance gate failed; inspect ratios and rerun under matched load before changing the budget')
+
+
 def summarize(result, iterations, samples, workload):
     if not result.get('validated') or len(result['samples']) != samples:
         raise ValueError('Missing functional validation or sample data')
     measured = iterations * samples
     calls = result['calls']
-    expected_launches = measured * (0 if workload == 'dispatch' else 3 if workload == 'mixed' else 1)
+    expected_launches = measured * launches(workload)
     if calls['kernel_launches'] != expected_launches:
         raise ValueError(f'Launch count mismatch: {calls["kernel_launches"]} != {expected_launches}')
     forbidden = {k: calls[k] for k in ('allocations', 'frees', 'copies', 'host_syncs') if calls[k]}
@@ -88,7 +119,7 @@ def trace_summary(path):
 
 def markdown(report):
     lines = ['# Flightmare systems profile', '', f'Status: **{report["status"]}**', '',
-             'Native C++ loops orchestrated by Python; dynamics measures physics only, without Python-per-step/task/policy costs.',
+             'Native C++ loops orchestrated by Python; dynamics measures physics; environment includes task/reset. Neither includes Python-per-step/policy costs.',
              'GPU timeline includes idle/queue gaps; it is not kernel execution time.', '',
              '| E x A | Workload | Submit us/iteration | Wall us/iteration | GPU timeline us/iteration | Arena MiB |',
              '| --- | --- | ---: | ---: | ---: | ---: |']
@@ -110,6 +141,8 @@ def markdown(report):
     for c in report['cases']:
         if 'compute' in c:
             lines += ['', f'Nsight Compute {c["environments"]}x{c["slots"]}: {c["compute"]["status"]}; see compute logs.']
+    if 'performance_gate' in report:
+        lines += ['', f'Wall-time gate: {"passed" if report["performance_gate"]["passed"] else "FAILED"}; limit {report["performance_gate"]["limit"]:.2f}x baseline.']
     if 'error' in report:
         lines += ['', 'Failure: ' + report['error']]
     return '\n'.join(lines) + '\n'
@@ -120,10 +153,13 @@ def main():
     p.add_argument('--repo', type=Path, default=Path.cwd())
     p.add_argument('--build-dir', type=Path, default=Path('/build/flightmare-profile'))
     p.add_argument('--cases', default='1x1,3x11,1024x1,1024x16,4096x16')
-    p.add_argument('--workloads', default='dispatch,direct,runtime,state,command,mixed,dynamics')
+    p.add_argument('--workloads', default='dispatch,direct,runtime,state,command,mixed,dynamics,environment')
     p.add_argument('--iterations', type=int, default=1000)
     p.add_argument('--samples', type=int, default=7)
     p.add_argument('--warmup', type=int, default=100)
+    p.add_argument('--reset-percent', type=int, default=0, help='Initial terminal-lane fraction for environment reset-density studies')
+    p.add_argument('--baseline', type=Path, help='Prior report.json for a matched hardware/workload wall-time gate')
+    p.add_argument('--max-wall-ratio', type=float, default=1.15)
     p.add_argument('--active-percent', type=int, default=100)
     p.add_argument('--compute', action='store_true', help='Attempt separate Nsight Compute capture; report unavailable counters explicitly')
     p.add_argument('--control-dt', type=float, default=.01)
@@ -133,6 +169,8 @@ def main():
     repo = args.repo.resolve()
     if not math.isfinite(args.control_dt) or args.control_dt < 0 or (args.cpu_baseline and args.control_dt != .01):
         p.error('Invalid control_dt; CPU comparison currently requires .01')
+    if not 0 <= args.reset_percent <= 100 or not math.isfinite(args.max_wall_ratio) or args.max_wall_ratio < 1:
+        p.error('Invalid reset percent or wall ratio')
     if args.iterations < 1 or args.samples < 1 or args.warmup < 0 or not 0 <= args.active_percent <= 100:
         p.error('Invalid measurement dimensions')
     cases = [tuple(map(int, case.split('x'))) for case in args.cases.split(',')]
@@ -142,7 +180,7 @@ def main():
         p.error('Case exceeds runtime lane capacity')
     if args.warmup + args.iterations * args.samples >= 2**24:
         p.error('Too many touch increments for exact float32 functional validation')
-    if set(args.workloads.split(',')) - {'direct', 'runtime', 'dispatch', 'state', 'command', 'mixed', 'dynamics'}:
+    if set(args.workloads.split(',')) - {'direct', 'runtime', 'dispatch', 'state', 'command', 'mixed', 'dynamics', 'environment', 'environment-split', 'environment-random'}:
         p.error('Unknown workload')
     directory = repo / '.local-ci' / ('profile-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ'))
     directory.mkdir(parents=True)
@@ -177,7 +215,7 @@ def main():
             extremes = {min(e*a for e, a in cases), max(e*a for e, a in cases)}
             for e, a, workload in jobs:
                 name = f'{e}x{a}-{workload}'
-                command = [binary, e, a, args.iterations, args.samples, args.warmup, workload, args.active_percent, 0, args.control_dt]
+                command = [binary, e, a, args.iterations, args.samples, args.warmup, workload, args.active_percent, 0, args.control_dt, args.reset_percent]
                 print(f'Measuring {name}', flush=True)
                 result = json.loads(run(command, repo, directory / f'{name}.json'))
                 summary = summarize(result, args.iterations, args.samples, workload)
@@ -195,20 +233,20 @@ def main():
                     try:
                         run(['ncu', '--profile-from-start', 'off', '--set', 'full', '--launch-count', '1', '--csv',
                              '--log-file', directory / f'{name}-compute.csv', binary, e, a, 1, 1, args.warmup,
-                             workload, args.active_percent, 1, args.control_dt], repo, directory / f'{name}-compute.log')
+                             workload, args.active_percent, 1, args.control_dt, args.reset_percent], repo, directory / f'{name}-compute.log')
                         item['compute'] = {'status': 'captured', 'metrics_file': f'{name}-compute.csv'}
                     except (RuntimeError, FileNotFoundError) as error:
                         item['compute'] = {'status': 'unavailable', 'reason': str(error), 'metrics_file': f'{name}-compute.csv'}
-                if args.trace and e*a in extremes and workload in ('direct', 'runtime', 'mixed', 'dynamics'):
+                if args.trace and e*a in extremes and workload in ('direct', 'runtime', 'mixed', 'dynamics', 'environment', 'environment-split', 'environment-random'):
                     tracefile = directory / name
-                    trace_command = [binary, e, a, min(args.iterations, 256), 1, args.warmup, workload, args.active_percent, 1, args.control_dt]
+                    trace_command = [binary, e, a, min(args.iterations, 256), 1, args.warmup, workload, args.active_percent, 1, args.control_dt, args.reset_percent]
                     run(['nsys', 'profile', '--trace=cuda', '--sample=none', '--cpuctxsw=none',
                          '--capture-range=cudaProfilerApi', '--capture-range-end=stop', f'--output={tracefile}',
                          *trace_command], repo, directory / f'{name}-trace.log')
                     run(['nsys', 'export', '--type=sqlite', f'--output={tracefile}.sqlite', f'{tracefile}.nsys-rep'],
                         repo, directory / f'{name}-export.log')
                     item['trace'] = trace_summary(Path(str(tracefile) + '.sqlite'))
-                    expected = min(args.iterations, 256) * (3 if workload == 'mixed' else 1)
+                    expected = min(args.iterations, 256) * launches(workload)
                     if item['trace']['kernel_count'] != expected or item['trace']['cuda_api_errors']:
                         raise ValueError('Incomplete or failed CUDA trace')
                     if any(item['trace']['memory_events'].values()):
@@ -216,6 +254,9 @@ def main():
             report['gpu_after'] = run(['nvidia-smi', '--query-gpu=temperature.gpu,clocks.sm,power.draw', '--format=csv'], repo)
             if fingerprint(repo) != report['source_fingerprint']:
                 raise ValueError('Sources changed during measurement; results invalidated')
+            if args.baseline:
+                report['baseline_sha256'] = hashlib.sha256(args.baseline.read_bytes()).hexdigest()
+                performance_gate(report, json.loads(args.baseline.read_text()), args.max_wall_ratio)
             report['status'] = 'passed'
     except Exception as error:
         report['error'] = str(error)

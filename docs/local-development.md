@@ -73,6 +73,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | Host contract test | fast: multi-slot indexing, 64-bit offsets, overflow rejection, const reads |
 | GPU runtime test | fast: device storage/indexing, binding rejection, stream/lifetime safety, no-copy/allocation launch checks; supersedes standalone device contract test |
 | GPU dynamics differential test | verify: complete trajectories/motors against frozen CPU, multiple models/modes/schedules, bounds and lane failure isolation |
+| GPU environment differential test | verify: scalar task parity, mixed-lane transitions/reset isolation, Euler branches, command clocks, counters and lane-stable RNG |
 | Python smoke | verify: native loading, binding layouts, actual state advancement |
 | Upstream logging/Eigen demonstrations | legacy only; printing logs/versions is not a behavioral assertion |
 | CUDA installation smoke | doctor only; routine device contracts already prove kernel launch |

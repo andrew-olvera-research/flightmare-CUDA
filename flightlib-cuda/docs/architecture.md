@@ -4,8 +4,9 @@ Status: version 1 data contract frozen for implementation. Kernel partitioning
 below is the initial design and may change through profiling without changing
 the contract. CUDA-2 implements persistent storage, binding validation, stream
 ordering, and ownership. CUDA-3 adds model preparation and low-level state and
-command lifecycle operations. CUDA-4 adds fused dynamics; task logic and queries
-remain unimplemented.
+command lifecycle operations. CUDA-4 adds fused dynamics. CUDA-5 adds native
+environment stepping, task outputs and episode resets; graph execution, policy
+bindings and geometry remain subsequent layers.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -606,6 +607,81 @@ time and status are exact. No fast math/FMA contraction is enabled in the kernel
 
 See [CUDA-4 performance evidence](cuda4-performance.md) for actual scaling,
 the optimized CPU comparison and rejected register-limit experiment.
+
+## CUDA-5 environment and episode lifecycle
+
+Tracking: [CUDA-5](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/5).
+The [environment API](../include/flightlib_cuda/environment.hpp) preserves the
+frozen tensor shapes. `configureTask` uploads finite per-lane task parameters,
+or broadcasts one TaskConfig, at an ordered synchronous setup boundary.
+`legacyTaskConfig(mass)` supplies legacy scaling, goal and reward defaults.
+Model/world-box/schedule setup remains explicit through `configure`.
+
+`bindTaskInputs` registers external raw actions [E,A,4], selected[N], reset
+state [25,N] and reset time[N] once. Binding ownership, alias and stride checks
+are inherited from the runtime. `resetEnvironment` selects active lanes through
+that mask, validates complete explicit samples before mutation, zeros motors
+and accepted rotor commands, resets command time/step, and increments episode.
+It returns reset observations but does not create a valid training transition.
+Unselected active lanes retain outputs and telemetry. A task reset never rewinds
+the RNG counter. Inactive lanes have zero outputs and Inactive status.
+
+`stepEnvironment` pays one runtime submission/ordering boundary and enqueues:
+
+1. Action preparation: validate raw inputs and physical state, scale actions,
+   clamp accepted rotor commands, advance the independent command clock.
+2. Fused D: advance only lanes accepted by preparation; existing standalone
+   dynamics behavior is unchanged. No input error advances physical state.
+3. Fused T/R: ZYX observations, raw-action L2 reward, terminal test/adjustment,
+   step counter and selected terminal reset. Preserve transition observation,
+   reward and done when returning a reset observation.
+
+`TaskExecution::SeparateReset` is a four-launch reference path used to measure
+T/R fusion. Both schedules have identical semantics and RNG sequences. D remains
+a distinct stage so future geometry can read completed pre-reset state. No
+per-step host done/error read, allocation, input copy or synchronization occurs.
+Internal dynamics uses the prepared validity mask; it does not repair invalid
+actions by running the last accepted command.
+
+Explicit automatic reset requires selected=1 on each terminal lane. Missing or
+invalid samples produce InvalidReset, do not change reset telemetry/counters,
+and zero all task outputs with valid=0. The preceding successful physical step
+and its step increment remain committed. Numerical dynamics failures preserve
+physical telemetry but leave an already accepted command/command clock in place.
+Numerical task-output failures also set valid=0; they never trigger reset. Thus
+failed transitions cannot silently look like ordinary terminal episodes.
+
+The observation conversion follows Eigen's ZYX branch, not a wrapped-angle
+equivalence. Ordinary cases use FP32 trig; near roll +/-pi and gimbal branches,
+double trig rounded to float avoids selecting the opposite branch due to CUDA
+float trig approximations. Task code disables FMA contraction and fast math;
+CPU observation fixtures disable contraction to match the frozen oracle.
+This is tested numerical parity, not a cross-platform bitwise trig guarantee.
+
+Random resets use the existing per-lane key and counter, a SplitMix64 finalizer,
+and ten top-24-bit uniform samples in [-1,1). Positions are (u,u,u+5), linear
+velocities (u,u,u), and a normalized four-sample quaternion; other state fields
+and time are zero. A zero quaternion sample falls back to identity. Successful
+random resets advance the counter by ten; explicit resets do not advance it.
+Samples are local intermediates, without a global sample-buffer pass. This
+matches the legacy reset distribution/construction, not its CPU PRNG sequence.
+Stable logical lanes reproduce across E/A grouping, reset-mask partitioning,
+and fused/split execution. A>1 outputs remain independent per-platform outputs.
+The legacy max_t value does not introduce a timeout termination condition.
+
+Local verify now includes environment_test: actual scalar QuadrotorEnv action,
+reward and terminal comparisons; 33-lane transitions with explicit samples and
+per-lane parameters; inactive/invalid/numerical-failure/reset-failure isolation;
+episode/command-clock checks; random resets and branch-boundary observations.
+Observation/state comparisons use 5e-4 * max(1,abs(reference)) over rollouts,
+scalar rewards 2e-4, and standalone Euler fixtures 2e-6. Discrete outputs,
+counters, clocks and RNG reproducibility are exact. CPU oracle sources and
+integrity manifest are unchanged. The separate CPU dynamics benchmark now
+explicitly selects the same .25 arm length as the GPU model (its symmetric
+rotor workload previously had zero torque, so the old comparison was unaffected).
+
+See [CUDA-5 systems evidence](cuda5-performance.md) for measured fusion benefits,
+logical traffic budgets and the local performance gate.
 
 ## Legacy source anchors
 
