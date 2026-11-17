@@ -26,11 +26,8 @@ class TensorEnv:
     @property
     def config(self): return self._config.copy()
 
-    @config.setter
-    def config(self, value): self._config=value.copy()
-
     def __init__(self, config=None, *, random_reset=True, auto_reset=True):
-        self.config = config or Config()
+        self._config = (config or Config()).copy()
         c = self.config
         self.num_envs, self.device = c.num_envs*c.slots, torch.device('cuda', c.device)
         self.engine = Environment(c.num_envs, c.slots, control_dt=c.control_dt, device=c.device,
@@ -108,6 +105,9 @@ class TensorEnv:
 
     def configure(self, config):
         self._ready()
+        config=config.copy()
+        if config.seed!=self._config.seed:
+            raise ValueError('use seed() explicitly to restart RNG streams')
         if (config.num_envs,config.slots,config.device)!=(self.config.num_envs,self.config.slots,self.config.device):
             raise ValueError('fixed environment capacity/device; construct another wrapper')
         # Native configure validates dynamics and schedule before upload. Task
@@ -122,7 +122,7 @@ class TensorEnv:
         self.engine._native.configure([config.model],self.engine.model_ids,self.engine.active,self.engine.bounds,config.control_dt)
         self.engine.configure_task(task)
         self.engine.models=[config.model]; self.engine.wait()
-        self.config=config; self.graph=False
+        self._config=config; self.graph=False
 
     def step_async(self, actions=None):
         self._ready()

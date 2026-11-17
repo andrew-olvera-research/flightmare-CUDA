@@ -32,6 +32,7 @@ def main():
         history = Rollout(args.steps, env, policy)
         for update in range(args.updates):
             history.collect(); history.finish()
+            if not bool(history.valid.all()): raise RuntimeError('invalid rollout')
             metrics = ppo_update(policy, optimizer, history)
             if not bool(history.valid.all()) or not bool(torch.isfinite(metrics).all()):
                 raise RuntimeError('invalid rollout or nonfinite training update')

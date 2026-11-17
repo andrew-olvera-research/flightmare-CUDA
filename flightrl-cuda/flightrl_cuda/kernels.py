@@ -34,11 +34,15 @@ class BoundKernel:
             ranges.append((begin,end))
         self.pointers=tuple(t.data_ptr() for t in tensors)
         self.shapes=tuple(tuple(t.shape) for t in tensors)
+        self.strides=tuple(t.stride() for t in tensors)
+        self.dtypes=tuple(t.dtype for t in tensors)
 
     def run(self, *args):
         # Reject reallocation or metadata mutation rather than using stale pointers.
-        for t,p,shape in zip(self.tensors,self.pointers,self.shapes):
-            if t.data_ptr()!=p or tuple(t.shape)!=shape: raise ValueError('RL bound storage changed')
+        for t,p,shape,stride,dtype in zip(self.tensors,self.pointers,self.shapes,self.strides,self.dtypes):
+            if (t.data_ptr()!=p or tuple(t.shape)!=shape or t.stride()!=stride or
+                t.dtype!=dtype or t.device!=self.device or t.requires_grad):
+                raise ValueError('RL bound storage changed')
         if torch.cuda.current_stream(self.device)!=self.stream:
             raise ValueError('submit on the RL binding construction stream')
         with torch.cuda.device(self.device):

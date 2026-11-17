@@ -81,7 +81,7 @@ def cpu_worker(conn, raw, dones, n, lo, hi, cpu, library, config):
 class CpuEnv(TensorEnv):
     """Benchmark adapter only; native simulation is untouched CPU Flightlib."""
     def __init__(self, config, mode='thread', workers=1, policy_device='cuda:0', library=LIBRARY, config_path=CONFIG):
-        self.config, self.mode = config, mode
+        self._config, self.mode = config.copy(), mode
         self.num_envs = config.num_envs*config.slots
         self.device = torch.device(policy_device)
         self._closed, self._pending, self.auto_reset = False, False, True

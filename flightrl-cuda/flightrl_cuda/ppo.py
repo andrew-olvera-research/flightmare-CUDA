@@ -117,8 +117,13 @@ class Rollout:
 
 
 def ppo_update(policy, optimizer, rollout, epochs=4, clip=.2, vf_coef=.5, ent_coef=0., max_grad_norm=.5):
-    if epochs<1 or not bool(rollout.valid.any()):
-        raise ValueError('PPO requires positive epochs and valid samples')
+    if epochs<1 or not bool((rollout.valid==1).all()):
+        raise ValueError('PPO requires positive epochs and an entirely valid rollout')
+    # Learner boundary, outside resident collection. Fail before touching Adam
+    # state or parameters; zero loss weights cannot suppress NaN gradients.
+    fields=(rollout.observation,rollout.latent,rollout.logp,rollout.returns,rollout.advantage)
+    if not bool(torch.stack([torch.isfinite(x).all() for x in fields]).all()):
+        raise ValueError('PPO rollout contains nonfinite inputs')
     obs = rollout.observation.flatten(0,1); latent = rollout.latent.flatten(0,1)
     old_logp, returns = rollout.logp.flatten(), rollout.returns.flatten()
     valid = rollout.valid.flatten().float(); count = valid.sum().clamp_min(1)
@@ -134,8 +139,9 @@ def ppo_update(policy, optimizer, rollout, epochs=4, clip=.2, vf_coef=.5, ent_co
         value_loss = ((values-returns).square()*valid).sum()/count
         entropy = (policy.log_std+.5*(1+math.log(2*math.pi))).sum()
         loss = policy_loss+vf_coef*value_loss-ent_coef*entropy
+        if not bool(torch.isfinite(loss)): raise ValueError('nonfinite PPO loss')
         optimizer.zero_grad(set_to_none=True); loss.backward()
-        nn.utils.clip_grad_norm_(policy.parameters(), max_grad_norm)
+        nn.utils.clip_grad_norm_(policy.parameters(), max_grad_norm,error_if_nonfinite=True)
         optimizer.step()
     return torch.stack((policy_loss.detach(), value_loss.detach(), entropy.detach()))
 
