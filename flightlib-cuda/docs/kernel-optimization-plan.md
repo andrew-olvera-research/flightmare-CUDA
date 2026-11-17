@@ -1,5 +1,9 @@
 # Kernel optimization analysis — v0.1.2 baseline
 
+The later [directed diagnostic campaign](kernel-diagnostic-findings.md) narrows
+the next implementation to shared state traversal in preparation/dynamics fusion.
+Its measurements supersede the tentative experiment ordering below.
+
 Baseline: `v0.1.2`, commit `a02e687`. Local `main` points to that commit; the
 existing `master` is retained. Analysis and experiments belong on
 `codex/kernel-optimization`. No simulation kernels or frozen contracts changed

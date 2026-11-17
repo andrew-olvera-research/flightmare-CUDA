@@ -197,6 +197,18 @@ A failed/interrupted report is not performance evidence. See
 
 ## Invariants and extension points
 
+For directed diagnosis without changing kernels:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile.diagnose
+```
+
+This varies integration duration and reset density at fixed batch sizes, captures
+every case, attributes time to preparation/dynamics/task-reset, repeats an anchor,
+and saves JSON/Markdown evidence. It checks stage drift separately from wall drift
+and joins compiled resources by binary hash. It does not infer achieved occupancy
+or DRAM traffic from timings. See [measured findings and the next directed change](../flightlib-cuda/docs/kernel-diagnostic-findings.md).
+
 Compiled resource inspection needs no privileged GPU counters and launches no
 kernels. It reports registers/local storage and **theoretical** occupancy by
 block size from the actual binary, not achieved occupancy or memory traffic:
