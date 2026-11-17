@@ -41,3 +41,10 @@ version does not imply complete integrated Flightmare parity.
   accepted-command and command-plus-step paths, nine optional batched CPU helpers,
   complete public-core-method audit, external scene metadata, installed Python/C++
   consumers and core systems/CPU telemetry probes. Frozen contracts unchanged.
+- [CUDA-9] Separate resident RL package, configuration/seed lifecycle, vector and
+  scalar host adapters, lane-zero execution, fused episode accounting and GAE,
+  persistent policy/rollout storage, PPO train/save/load/evaluate example, and
+  installed-package validation. Matched thread/process CPU benchmarks include
+  downstream numerical gates, explicit near-gimbal orientation qualification,
+  timing-drift rejection and independent transfer/allocation traces. Public
+  README and release operations remain deferred; no existing parity gate changed.

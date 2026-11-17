@@ -40,6 +40,11 @@ __device__ std::uint64_t mix(std::uint64_t x){
 __device__ float uniform(std::uint64_t key,std::uint64_t counter){
   return float(mix(key+0x9e3779b97f4a7c15ULL*(counter+1))>>40)*(2.0f/16777216.0f)-1.0f;
 }
+__global__ void seedKernel(RuntimeViews v,std::uint64_t seed){
+  Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
+  v.episodes.random_key(n)=mix(seed+n+0x9e3779b97f4a7c15ULL);
+  v.episodes.random_counter(n)=0;
+}
 // Reset validates all samples and the derived observation before committing.
 __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
   float x[25]={},obs[12],time=0;const Offset N=v.topology.batch.lanes;
@@ -97,7 +102,7 @@ __global__ void prepareActions(RuntimeViews v,Inputs in){
   v.commands.mode(n)=CommandMode::RotorThrust;v.commands.time(n)=time;
   v.episodes.command_time(n)=time;v.task_output.valid.data[n]=1;
 }
-template<bool InlineReset>
+template<bool InlineReset, bool TerminalReward=true>
 __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
   if(v.diagnostics.status(n)!=LaneStatus::Ok){clearOutputs(v.task_output,n);return;}
@@ -113,7 +118,7 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source){
     float raw=in.action[4ULL*n+group];action_norm+=raw*raw;
   }
   reward+=v.task_parameters.reward_coeff(4,n)*sqrtf(action_norm);reward+=.1f;
-  bool terminal=x[2]<=.02f;if(terminal)reward+=-.02f;
+  bool terminal=x[2]<=.02f;if(TerminalReward&&terminal)reward+=-.02f;
   bool valid=isfinite(reward);
   #pragma unroll
   for(int c=0;c<12;++c)valid &= isfinite(obs[c]);
@@ -147,6 +152,11 @@ Inputs pointers(const std::vector<BindingRequest>& b){return {static_cast<const 
 void validateSource(ResetSource source){if(source!=ResetSource::Explicit&&source!=ResetSource::Random)throw std::invalid_argument("unknown reset source");}
 }
 TaskConfig legacyTaskConfig(Scalar mass){if(!std::isfinite(mass)||mass<=0)throw std::invalid_argument("invalid task mass");TaskConfig c;c.action_mean.fill(mass*9.81f/4);c.action_scale.fill(mass*2*9.81f/4);return c;}
+void seedEnvironment(Simulation& s,std::uint64_t seed){
+  s.enqueueSetup([](const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>&,void* ptr){
+    seedKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,*static_cast<std::uint64_t*>(ptr));
+  },&seed);
+}
 void configureTask(Simulation& s,const std::vector<TaskConfig>& configs){
   Offset N=s.views().topology.batch.lanes;if(configs.size()!=1&&configs.size()!=N)throw std::invalid_argument("wrong task parameter count");
   std::vector<float> mean(4*N),scale(4*N),goal(12*N),reward(5*N);
@@ -170,14 +180,19 @@ namespace {
 struct EnvironmentContext {ResetSource source;TaskExecution execution;};
 void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
   auto ctx=*static_cast<EnvironmentContext*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
+  if(ctx.execution==TaskExecution::FirstLaneReset){
+    prepareActions<<<1,1,0,stream>>>(v,in);detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
+    taskKernel<true><<<1,1,0,stream>>>(v,in,ctx.source);return;
+  }
   prepareActions<<<blocks,128,0,stream>>>(v,in);detail::launchDynamics(v,stream,v.task_output.valid.data);
   if(ctx.execution==TaskExecution::FusedReset)taskKernel<true><<<blocks,128,0,stream>>>(v,in,ctx.source);
+  else if(ctx.execution==TaskExecution::NoReset)taskKernel<false,false><<<blocks,128,0,stream>>>(v,in,ctx.source);
   else {taskKernel<false><<<blocks,128,0,stream>>>(v,in,ctx.source);resetKernel<<<blocks,128,0,stream>>>(v,in,ctx.source,true);}
 }
 void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
   resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false);
 }
-void validateExecution(TaskExecution execution){if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset)throw std::invalid_argument("unknown task execution");}
+void validateExecution(TaskExecution execution){if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset)throw std::invalid_argument("unknown task execution");}
 }
 void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);s.enqueue(resetLaunch,&source,&b);}
 void resetEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){validate(s,b);validateSource(source);s.enqueueFrom(stream,resetLaunch,&source,&b);}

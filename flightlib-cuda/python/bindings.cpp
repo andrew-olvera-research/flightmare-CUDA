@@ -99,6 +99,11 @@ struct NativeOperation {
 };
 struct NativeEnvironment {
   Simulation sim;Bindings bindings;Graph graph;bool bound=false,captured=false,captured_random=true;
+  TaskExecution execution=TaskExecution::FusedReset;
+  void autoReset(bool enabled){execution=enabled?TaskExecution::FusedReset:TaskExecution::NoReset;graph=Graph{};captured=false;}
+  void testStep(std::uintptr_t stream,bool random){stable();
+    stepEnvironmentFrom(sim,bindings,reinterpret_cast<cudaStream_t>(stream),random?ResetSource::Random:ResetSource::Explicit,TaskExecution::FirstLaneReset);
+  }
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
                     const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
                     const std::vector<Mask>& active,const std::vector<float>& bounds):sim([&]{
@@ -120,10 +125,10 @@ struct NativeEnvironment {
     }
   }
   void reset(std::uintptr_t stream,bool random){stable();resetEnvironmentFrom(sim,bindings,reinterpret_cast<cudaStream_t>(stream),random?ResetSource::Random:ResetSource::Explicit);}
-  void capture(bool random){stable();graph=captureEnvironment(sim,bindings,random?ResetSource::Random:ResetSource::Explicit);captured=true;captured_random=random;}
+  void capture(bool random){stable();graph=captureEnvironment(sim,bindings,random?ResetSource::Random:ResetSource::Explicit,execution);captured=true;captured_random=random;}
   void step(std::uintptr_t stream,bool replay,bool random){stable();auto s=reinterpret_cast<cudaStream_t>(stream);
     if(replay){if(!captured)throw std::logic_error("capture before graph replay");if(random!=captured_random)throw std::invalid_argument("reset mode differs from captured graph");sim.replayFrom(graph,s);}
-    else stepEnvironmentFrom(sim,bindings,s,random?ResetSource::Random:ResetSource::Explicit);
+    else stepEnvironmentFrom(sim,bindings,s,random?ResetSource::Random:ResetSource::Explicit,execution);
   }
 };
 }
@@ -162,7 +167,9 @@ PYBIND11_MODULE(_native,m){
   py::class_<NativeEnvironment>(m,"NativeEnvironment")
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
-    .def("bind",&NativeEnvironment::bind).def("reset",&NativeEnvironment::reset)
+    .def("bind",&NativeEnvironment::bind).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
+    .def("test_step",&NativeEnvironment::testStep)
+    .def("seed",[](NativeEnvironment& e,std::uint64_t seed){seedEnvironment(e.sim,seed);})
     .def("capture",&NativeEnvironment::capture).def("step",&NativeEnvironment::step)
     .def("tensor",[](NativeEnvironment& e,const std::string& name){return exportTensor(e.sim,name);})
     .def("wait",[](NativeEnvironment& e,std::uintptr_t s){e.sim.waitOn(reinterpret_cast<cudaStream_t>(s));})

@@ -83,6 +83,9 @@ void detail::launchDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask
   if(require_command_ok)dynamicsKernel<true><<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
   else dynamicsKernel<false><<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
 }
+void detail::launchDynamicsFirst(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled){
+  dynamicsKernel<false><<<1,1,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+}
 namespace {
 void dynamicsLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>&,void*){
   detail::launchDynamics(v,stream);

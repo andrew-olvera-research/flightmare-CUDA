@@ -784,22 +784,32 @@ standalone Python/C++ consumers. The profiler measures core accepted-command and
 command-plus-step paths, each with/without graphs, stable storage, CPU telemetry
 comparison and separate launch/transfer traces. See [CUDA-8 evidence](cuda8-validation.md).
 
-## CUDA-9 planned usage layer
+## CUDA-9 implemented usage and RL layer
 
-The final [usage/RL plan](cuda9-usage-plan.md) supersedes the earlier wrapper
-deferral. A separate `flightrl_cuda` package will compose the existing Environment
-with tensor vector APIs, device episode accounting and resident rollout history.
-It adds an explicit NumPy compatibility boundary and a train/evaluate example.
-Core equations and frozen arena contracts remain the source of truth; no second
-simulator or per-agent CPU ownership is introduced. Missing execution controls
-and setup bindings must be validated against actual legacy task behavior.
+The [usage/RL plan](cuda9-usage-plan.md) supersedes the earlier wrapper deferral.
+`flightrl_cuda` now composes Environment with tensor vector APIs, one fused
+episode-statistics kernel and resident rollout history. Separate policy graphs
+feed the existing three-node simulation graph. GAE uses one thread per lane and
+one backward loop, avoiding T framework launches. PPO/autograd allocations and
+host logging/checkpoint boundaries are measured separately from collection.
 
-Qualification covers wrapper-visible parity, configuration/resource lookup,
-terminal-versus-reset observations, stream/lifetime safety, installed user flows
-and policy/rollout systems metrics. Release means a validated reproducible
-checkpoint; a tag or publication is a separate action. Rendering, sensors and
-scene collision engines remain deferred. This section is a plan, not completion
-evidence or an alteration of the existing v1 tensors.
+Scalar no-autoreset behavior and lane-zero vector testStep reuse the existing
+kernels. Seed setup restarts the existing device RNG streams. No equations,
+frozen state/tensor layouts, CPU oracle or existing parity tolerances changed.
+The [usage contract](cuda9-usage-contract.md) freezes new wrapper/history shapes,
+ownership, streams, configuration and source-anchored legacy method mapping.
+
+Qualification covers wrapper parity, configuration/resource lookup, terminal and
+reset observations, stream/lifetime safety, installed train/save/load/evaluate
+flows, and matched CPU/GPU RL iterations. [Evidence](cuda9-validation.md) includes
+thread/process CPU sweeps and Nsight validation of zero host transfers and zero
+collection allocations. An explicitly separate near-gimbal Euler gate requires
+close reconstructed orientation and unchanged downstream checks; the strict
+gate and original parity suites remain available and unchanged.
+
+The public README and clean release qualification remain deferred to the next
+turn. No tag/publication is performed. Rendering, sensors and scene collision
+engines remain out of scope.
 
 ## Legacy source anchors
 

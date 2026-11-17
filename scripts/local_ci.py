@@ -142,7 +142,7 @@ def execute(profile, runner):
         # FP flags. Qualify the actual optimized CPU comparison, including rewards.
         runner.cmake('optimized-cpu', 'flightmare-profile/native', '/build/flightmare-profile',
                      ['-DPROFILE_CPU_BASELINE=ON', *cuda_options],
-                     targets=['cpu_baseline', 'cpu_environment_parity'])
+                     targets=['cpu_baseline', 'cpu_environment_parity', 'cpu_environment'])
         for name in ('cpu_baseline', 'cpu_environment_parity'):
             runner.run(name, [f'/build/flightmare-profile/{name}'],
                        env=dict(os.environ, FLIGHTMARE_PATH=str(ROOT)))
@@ -155,12 +155,25 @@ def execute(profile, runner):
         runner.run('cuda-python-parity', [cuda_python, '-m', 'pytest', '-q',
                    'flightlib-cuda/python/tests', f'--junitxml={runner.directory / "cuda-python.xml"}'],
                    env=dict(os.environ, PYTHONPATH='/build/flightlib-cuda-python-native/python'))
+        runner.run('rl-build', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation', '-e', 'flightrl-cuda'])
+        runner.run('rl-acceptance', [cuda_python, '-m', 'pytest', '-q', 'flightrl-cuda/tests',
+                   f'--junitxml={runner.directory / "rl.xml"}'],
+                   env=dict(os.environ, PYTHONPATH='/workspace/flightrl-cuda:/workspace/flightmare-profile:/build/flightlib-cuda-python-native/python'))
         # Install to a fresh destination so stale source/build imports cannot
         # masquerade as a complete standalone package.
         install = runner.directory / 'installed'
         runner.run('core-install', ['cmake', '--install', '/build/flightlib-cuda-python-native', '--prefix', str(install)])
         runner.run('installed-core-example', [cuda_python, str(ROOT/'flightlib-cuda/python/examples/core.py')],
                    env=dict(os.environ, PYTHONPATH=str(install)))
+        runner.run('rl-install', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation',
+                                 '--target', str(install), str(ROOT/'flightrl-cuda')])
+        checkpoint=runner.directory/'policy.pt'
+        # Run from /tmp, with only the installed packages on PYTHONPATH.
+        entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
+        runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','8','--steps','8','--updates','2',
+                   '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
+        runner.run('installed-rl-evaluate', [cuda_python,'-c',entry,'--envs','8','--steps','8','--evaluate',
+                   '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
         runner.cmake('installed-native', 'flightlib-cuda/examples/native', str(runner.directory/'consumer'),
                      [f'-DCMAKE_PREFIX_PATH={install}'])
         runner.run('installed-native-consumer', [str(runner.directory/'consumer/core_consumer')])

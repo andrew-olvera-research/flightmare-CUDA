@@ -10,8 +10,10 @@ struct TaskConfig {
 TaskConfig legacyTaskConfig(Scalar mass);
 // Explicit synchronous setup. One configuration broadcasts; otherwise require N.
 void configureTask(Simulation&,const std::vector<TaskConfig>&);
+// Setup boundary: restart device reset RNG streams, retaining physical/episode state.
+void seedEnvironment(Simulation&,std::uint64_t);
 enum class ResetSource { Explicit, Random };
-enum class TaskExecution { FusedReset, SeparateReset };
+enum class TaskExecution { FusedReset, SeparateReset, NoReset, FirstLaneReset };
 // Bind once: action[E,A,4], selected[N], reset_x[25,N], reset_time[N].
 // Explicit automatic reset requires selected=1 for every terminal lane.
 Bindings bindTaskInputs(Simulation&,BindingRequest action,BindingRequest selected,

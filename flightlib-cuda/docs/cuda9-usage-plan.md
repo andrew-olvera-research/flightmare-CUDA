@@ -1,6 +1,13 @@
 # CUDA-9: headless usage and RL completion
 
-Status: planned, not implemented. Baseline: CUDA-8 commit e01d077, version 0.1.0.
+Status: usage/RL implementation and benchmark milestone implemented, version 0.1.0.
+Baseline: CUDA-8 commit e01d077; planning checkpoint 23082b9.
+See [implemented contracts/method mapping](cuda9-usage-contract.md) and
+[validation/performance evidence](cuda9-validation.md). Tensor/host wrappers,
+scalar and lane-zero execution, configuration/seed lifecycle, resident collection,
+GAE/PPO, save/load/evaluation and installed-package checks are implemented.
+The public README/migration presentation and clean release qualification remain
+the next turn's operations. This milestone does not close or publish CUDA-9.
 This is the final implementation layer for this public rewrite. It extends the
 previous core-only scope to the headless user and RL interfaces. Rendering,
 scene collision engines, cameras and all sensors remain later-project work.
