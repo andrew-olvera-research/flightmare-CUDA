@@ -197,6 +197,18 @@ A failed/interrupted report is not performance evidence. See
 
 ## Invariants and extension points
 
+Compiled resource inspection needs no privileged GPU counters and launches no
+kernels. It reports registers/local storage and **theoretical** occupancy by
+block size from the actual binary, not achieved occupancy or memory traffic:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile.kernel_resources /build/flightlib-cuda-python-native/python/flightlib_cuda/_native.cpython-312-x86_64-linux-gnu.so --output /workspace/.local-ci/kernel-resources.json
+```
+
+See the [pre-optimization scaling analysis](../flightlib-cuda/docs/kernel-optimization-plan.md)
+for measured resource limits, four-million-agent scaling and the ordered fusion
+experiments. The baseline stays pinned at v0.1.2.
+
 CUDA-8 core probes use the installed-style production Python API without tasks:
 
 ```sh
