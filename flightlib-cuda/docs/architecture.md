@@ -4,7 +4,8 @@ Status: version 1 data contract frozen for implementation. Kernel partitioning
 below is the initial design and may change through profiling without changing
 the contract. CUDA-2 implements persistent storage, binding validation, stream
 ordering, and ownership. CUDA-3 adds model preparation and low-level state and
-command lifecycle operations. It does not yet integrate dynamics or execute queries.
+command lifecycle operations. CUDA-4 adds fused dynamics; task logic and queries
+remain unimplemented.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -566,6 +567,45 @@ fast retains the runtime/contract checks; verify adds lifecycle differential
 coverage after building the oracle and before the Python binding check. The
 host sanitizer limitation from CUDA-2 remains unresolved. Full trajectory parity
 belongs to CUDA-4 and is not claimed by these lifecycle comparisons.
+
+## Systems profile before CUDA-4
+
+The separate [Python profiling package](../../flightmare-profile/README.md)
+now measures the real runtime/lifecycle implementation with native workload
+loops, CUDA API counters, and independent Nsight traces. The
+[initial systems assessment](systems-profile.md) records the measured evidence
+and decisions for the next layers. Persistent residency passed; launch overhead
+is significant for small work. Keep the frozen layout and fused control-interval
+boundary, and extend the harness with actual dynamics before claiming speedup.
+Timing remains outside normal verify; residency and functional checks fail hard.
+
+## CUDA-4 implementation and validation
+
+`stepDynamics` enqueues one kernel for the configured control interval, including
+zero duration (legacy validation and world-box constraints still apply). One
+thread owns each lane, retains state/motors and RK intermediates locally, and
+writes completed telemetry once. Controller, motor lag, allocation, frozen
+acceleration/torque RK4, time advancement and asymmetric world-box constraints
+preserve CPU ordering. The ineffective legacy quaternion normalization is not
+silently corrected. Commands are already accepted/clamped by the lifecycle API.
+
+Invalid state/command lanes retain telemetry. Nonfinite internal results produce
+NumericalFailure and retain prior telemetry/time/motors, with no partial commit.
+This is an explicit supported-domain failure policy rather than emulation of
+legacy propagation of internal NaNs. It is separate from input rejection and
+task termination. Active lanes are independent; inactive lanes remain untouched.
+
+The dynamics differential test is part of verify and compares 300 intervals for
+each of zero, .0025, .006125 and .01-second schedules, 33 lanes/two models, both
+command modes and reversals, non-unit quaternions, all state fields, time, motors,
+boundaries, inactive lanes, invalid inputs and numerical failure isolation.
+State tolerances are 3e-4 relative-to-max(1,abs(reference)) for integrated fields
+and 1e-4 for acceleration/torque/auxiliaries, allowing accumulated FP32 arithmetic
+ordering differences over rollouts. Motor tolerances are .02 rad/s and 1e-4 N;
+time and status are exact. No fast math/FMA contraction is enabled in the kernel.
+
+See [CUDA-4 performance evidence](cuda4-performance.md) for actual scaling,
+the optimized CPU comparison and rejected register-limit experiment.
 
 ## Legacy source anchors
 

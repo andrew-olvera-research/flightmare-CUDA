@@ -72,6 +72,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | CPU parity suite | verify: rejection, clamps, motors, integration, bounds, rewards, reset routing |
 | Host contract test | fast: multi-slot indexing, 64-bit offsets, overflow rejection, const reads |
 | GPU runtime test | fast: device storage/indexing, binding rejection, stream/lifetime safety, no-copy/allocation launch checks; supersedes standalone device contract test |
+| GPU dynamics differential test | verify: complete trajectories/motors against frozen CPU, multiple models/modes/schedules, bounds and lane failure isolation |
 | Python smoke | verify: native loading, binding layouts, actual state advancement |
 | Upstream logging/Eigen demonstrations | legacy only; printing logs/versions is not a behavioral assertion |
 | CUDA installation smoke | doctor only; routine device contracts already prove kernel launch |
@@ -90,11 +91,20 @@ assertions, expected results computed by the implementation under test, and
 noisy one-shot performance assertions. Docs-only edits need review/link checks,
 not new simulator tests. Keep frozen upstream tests intact for investigation.
 
-No performance thresholds exist before dynamics kernels. At the first kernel,
-add a separate benchmark command with warmup, repeated samples, fixed E/A/query
-workloads, synchronization at measurement boundaries, and machine-specific
-baselines. Save wall time, VRAM, transfer, and synchronization evidence. Review
-threshold changes. Do not add a speculative benchmark matrix to routine checks.
+No performance thresholds exist before dynamics kernels. The separate
+[flightmare-profile package](../flightmare-profile/README.md) now measures runtime
+and lifecycle workloads with warmup, repeated samples, fixed E/A capacities,
+boundary synchronization, source identity, memory accounting, CUDA call counts,
+and optional independent Nsight traces. Run it outside normal checks:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --iterations 500 --samples 7 --trace
+```
+
+Its analysis tests are documented in the package README. Add actual control
+intervals and query workloads as implemented, then establish machine-specific
+baselines. Review threshold changes. Do not put noisy timing assertions or a
+speculative benchmark matrix in routine checks.
 
 ## Oracle integrity
 

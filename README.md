@@ -28,6 +28,14 @@ The new [flightlib-cuda package](flightlib-cuda/README.md) starts with frozen
 It preserves Flightmare dynamics and uses no PhysX backend. The dev check also
 compiles and exercises the contracts with both C++ and CUDA.
 
+The separate [Python systems profiler](flightmare-profile/README.md) measures
+GPU calls, submission/completion timing, persistent memory, and Nsight traces.
+See the [pre-CUDA-4 assessment](flightlib-cuda/docs/systems-profile.md) for the
+initial measurements and implications for kernel fusion and launch overhead.
+CUDA-4 now provides real fused stepping; see its
+[parity and scaling results](flightlib-cuda/docs/cuda4-performance.md), including
+the optimized CPU comparison and measured limits.
+
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and
 the native dependencies for the CPU `flightlib` and `flightgym` builds. On

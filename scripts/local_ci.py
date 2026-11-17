@@ -134,9 +134,9 @@ def execute(profile, runner):
         runner.cmake('lifecycle', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
                      ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
                       '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/flightmare-parity-tests/flightlib/libflightlib.a',
-                      *cuda_options], targets=['lifecycle_test'])
+                      *cuda_options], targets=['lifecycle_test', 'dynamics_test'])
         runner.run('lifecycle-parity', ['ctest', '--test-dir', '/build/flightlib-cuda-contracts',
-                   '-R', '^flightlib_cuda.lifecycle_parity$', '--no-tests=error',
+                   '-R', '^flightlib_cuda.(lifecycle|dynamics)_parity$', '--no-tests=error',
                    '--output-on-failure', '--output-junit', str(runner.directory / 'lifecycle.xml')])
         env = dict(os.environ, PYTHONPATH='/build/flightmare-parity-tests/flightlib')
         runner.run('binding', [sys.executable, '-m', 'pytest', '-q',

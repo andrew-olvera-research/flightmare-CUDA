@@ -18,7 +18,8 @@ if(FLIGHTLIB_CUDA_BUILD_RUNTIME OR FLIGHTLIB_CUDA_TEST_DEVICE)
   find_package(CUDAToolkit 13.0 REQUIRED)
   find_package(Eigen3 REQUIRED)
   find_package(yaml-cpp REQUIRED)
-  add_library(flightlib_cuda_runtime STATIC src/runtime.cu src/model.cpp src/lifecycle.cu)
+  add_library(flightlib_cuda_runtime STATIC src/runtime.cu src/model.cpp src/lifecycle.cu src/dynamics.cu)
+  set_source_files_properties(src/dynamics.cu PROPERTIES COMPILE_OPTIONS "--fmad=false;-Xptxas=-v")
   add_library(flightlib_cuda::runtime ALIAS flightlib_cuda_runtime)
   target_link_libraries(flightlib_cuda_runtime PUBLIC flightlib_cuda::contracts CUDA::cudart
     PRIVATE CUDA::cuda_driver Eigen3::Eigen yaml-cpp::yaml-cpp)
@@ -55,6 +56,16 @@ if(BUILD_TESTING)
         OpenMP::OpenMP_CXX ${OpenCV_LIBRARIES} zmq zmqpp stdc++fs)
       add_test(NAME flightlib_cuda.lifecycle_parity COMMAND lifecycle_test)
       set_tests_properties(flightlib_cuda.lifecycle_parity PROPERTIES TIMEOUT 60
+        ENVIRONMENT "FLIGHTMARE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/..")
+      add_executable(dynamics_test tests/dynamics_test.cpp)
+      target_include_directories(dynamics_test PRIVATE ../flightlib/include ${OpenCV_INCLUDE_DIRS})
+      target_compile_definitions(dynamics_test PRIVATE EIGEN_STACK_ALLOCATION_LIMIT=1048576)
+      target_compile_options(dynamics_test PRIVATE -march=native)
+      target_link_libraries(dynamics_test PRIVATE flightlib_cuda::runtime
+        "${FLIGHTLIB_CUDA_ORACLE_LIBRARY}" Eigen3::Eigen yaml-cpp::yaml-cpp
+        OpenMP::OpenMP_CXX ${OpenCV_LIBRARIES} zmq zmqpp stdc++fs)
+      add_test(NAME flightlib_cuda.dynamics_parity COMMAND dynamics_test)
+      set_tests_properties(flightlib_cuda.dynamics_parity PROPERTIES TIMEOUT 60
         ENVIRONMENT "FLIGHTMARE_PATH=${CMAKE_CURRENT_SOURCE_DIR}/..")
     endif()
   endif()

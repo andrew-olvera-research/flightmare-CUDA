@@ -10,6 +10,11 @@
   ordering, shared ownership, and runtime regression/profiling checks.
 - [CUDA-3] Model/YAML preparation, exact float substep schedules, state and command
   lifecycle kernels, and CPU/GPU differential lifecycle validation.
+- Separate Python systems profiling package with native runtime/lifecycle probes,
+  CUDA call counters, independent Nsight traces, and a pre-CUDA-4 assessment.
 
-Dynamics kernels are not implemented yet. This version identifies the rewrite
-baseline, not completed CPU/GPU physics parity.
+- [CUDA-4] Fused dynamics, trajectory differential gate, and systems profiler
+  stepping/scaling workloads with an optimized strict-FP CPU baseline.
+
+Task logic, policy integration and geometry remain subsequent layers; this
+version does not imply complete Flightmare environment parity.
