@@ -298,6 +298,7 @@ def validate_trace(path, lanes, steps):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--lanes',default='33,1024,16384'); p.add_argument('--workers',default='1,2,4,8,16')
+    p.add_argument('--agents',type=int,default=1,help='Independent agents per environment; each lane count must divide exactly')
     p.add_argument('--modes',default='thread,process'); p.add_argument('--cpu-policy-devices',default='cuda:0')
     p.add_argument('--steps',type=int,default=32); p.add_argument('--samples',type=int,default=5)
     p.add_argument('--warmup',type=int,default=2); p.add_argument('--epochs',type=int,default=2)
@@ -307,6 +308,7 @@ def main():
     p.add_argument('--euler-gate',choices=('strict','conditioned'),default='conditioned')
     args=p.parse_args()
     lanes=list(map(int,args.lanes.split(','))); workers=list(map(int,args.workers.split(',')))
+    if args.agents<1 or any(n%args.agents for n in lanes): p.error('lanes must be divisible by agents')
     learner_threads=list(map(int,args.cpu_learner_threads.split(',')))
     if min(lanes+workers+[args.steps,args.samples,args.epochs,args.torch_threads])<1 or min(args.spin,args.warmup)<0: p.error('invalid dimensions')
     root=Path('/workspace'); build=Path('/build/flightmare-profile')
@@ -347,7 +349,7 @@ def main():
             # Each measured configuration is validated, including process partition.
             from types import SimpleNamespace
             for n in lanes:
-                cfg=Config(num_envs=n)
+                cfg=Config(num_envs=n//args.agents,slots=args.agents)
                 generator=torch.Generator().manual_seed(91)
                 noise=torch.randn((args.steps,n,4),generator=generator)
                 base,reference=case(cfg,'gpu',0,'cuda:0',args.steps,args.samples,args.warmup,args.epochs,args.spin,state,noise)
@@ -386,7 +388,7 @@ def main():
                     prefix=directory/f'trace-{n}'
                     run(['nsys','profile','--trace=cuda','--cuda-graph-trace=node','--sample=none',
                          '--capture-range=cudaProfilerApi','--capture-range-end=stop','--output='+str(prefix),
-                         os.sys.executable,'-m','flightmare_profile.rl_trace','--lanes',str(n),'--steps',str(args.steps)],root,directory/f'trace-{n}.log')
+                         os.sys.executable,'-m','flightmare_profile.rl_trace','--lanes',str(n),'--steps',str(args.steps),'--agents',str(args.agents)],root,directory/f'trace-{n}.log')
                     run(['nsys','export','--type=sqlite','--output='+str(prefix)+'.sqlite',str(prefix)+'.nsys-rep'],root,directory/f'export-{n}.log')
                     report['traces'].append(dict(lanes=n,summary=validate_trace(Path(str(prefix)+'.sqlite'),n,args.steps)))
             if fingerprint(root)!=report['source_fingerprint']: raise RuntimeError('source changed during benchmark')

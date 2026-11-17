@@ -10,9 +10,11 @@ from .rl_benchmark import warm_start
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--lanes',type=int,required=True); p.add_argument('--steps',type=int,default=32)
+    p.add_argument('--agents',type=int,default=1)
     args=p.parse_args()
     torch.manual_seed(17)
-    env=TensorEnv(Config(num_envs=args.lanes),random_reset=False)
+    if args.agents<1 or args.lanes%args.agents: p.error('lanes must divide by agents')
+    env=TensorEnv(Config(num_envs=args.lanes//args.agents,slots=args.agents),random_reset=False)
     warm_start(env,20)
     policy=ActorCritic().cuda(); history=Rollout(args.steps,env,policy)
     history.noise.normal_(); history.collect(resample=False)

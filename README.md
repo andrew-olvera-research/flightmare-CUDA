@@ -1,119 +1,122 @@
-# Flightmare - 左青龙
+# Flightmare CUDA — v0.1.1
 
-![License](https://img.shields.io/badge/License-MIT-blue.svg) ![website]( https://img.shields.io/website-up-down-green-red/https/naereen.github.io.svg)
+A CUDA-accelerated implementation of Flightmare's headless Flightlib simulation
+and quadrotor task, with persistent GPU state, PyTorch tensor APIs and resident RL.
+It retains the Flightmare dynamics and model preparation; it does not use PhysX.
 
-**Flightmare** is a flexible modular quadrotor simulator.
-Flightmare is composed of two main components: a configurable rendering engine built on Unity and a flexible physics engine for dynamics simulation.
-Those two components are totally decoupled and can run independently from each other. 
-Flightmare comes with several desirable features: (i) a large multi-modal sensor suite, including an interface to extract the 3D point-cloud of the scene; (ii) an API for reinforcement learning which can simulate hundreds of quadrotors in parallel; and (iii) an integration with a virtual-reality headset for interaction with the simulated environment.
-Flightmare can be used for various applications, including path-planning, reinforcement learning, visual-inertial odometry, deep learning, human-robot interaction, etc.
+## Implemented capabilities
 
-**[Website](https://uzh-rpg.github.io/flightmare/)** & 
-**[Documentation](https://flightmare.readthedocs.io/)** 
+- Batched physical state, commands, motors, model configuration/randomization,
+  integration, world bounds and separately callable core mathematical helpers.
+- Environment observations, rewards, terminal decisions, device random resets,
+  partial reset, scalar stepping and vector autoreset.
+- Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
+  environment/agent views and explicit host-copy adapters.
+- Resident policy inference, rollout history, fused episode statistics and GAE,
+  PPO training, save/load/evaluation and a reproducible parallel CPU comparison.
+- Local validation, frozen CPU oracle, numerical qualification and Nsight gates
+  for transfers, allocations and launch counts. No cloud CI is required.
 
-[![IMAGE ALT TEXT HERE](./docs/flightmare_main.png)](https://youtu.be/m9Mx1BCNGFU)
+This is the completed **scoped headless rewrite**, not a replacement for Unity
+rendering, sensors, scene collision geometry, ROS/PX4 or every legacy RL framework.
+Those upstream components remain in the repository but are not GPU-accelerated by
+this package. CPU/GPU random sequences and TensorFlow checkpoints are not identical.
+See the [capability mapping](flightlib-cuda/docs/cuda9-usage-contract.md),
+[core API](flightlib-cuda/docs/core-api.md) and
+[numerical qualification](flightlib-cuda/docs/cuda9-validation.md).
 
-## Installation
-Installation instructions can be found in our [Wiki](https://github.com/uzh-rpg/flightmare/wiki).
+## Build and validate
 
-## CUDA development
-
-The rewrite baseline is **v0.1.0**. Use `./scripts/check.ps1 fast` during
-development and `./scripts/check.ps1 verify` before checkpoints. See
-[local validation and versioning](docs/local-development.md) for test selection,
-saved reports, oracle protection, and local release tags. No cloud CI is used.
-
-The new [flightlib-cuda package](flightlib-cuda/README.md) starts with frozen
-[v1 tensor contracts and architecture](flightlib-cuda/docs/architecture.md).
-It preserves Flightmare dynamics and uses no PhysX backend. The dev check also
-compiles and exercises the contracts with both C++ and CUDA.
-
-The separate [Python systems profiler](flightmare-profile/README.md) measures
-GPU calls, submission/completion timing, persistent memory, and Nsight traces.
-See the [pre-CUDA-4 assessment](flightlib-cuda/docs/systems-profile.md) for the
-initial measurements and implications for kernel fusion and launch overhead.
-CUDA-4 now provides real fused stepping; see its
-[parity and scaling results](flightlib-cuda/docs/cuda4-performance.md), including
-the optimized CPU comparison and measured limits.
-CUDA-5 adds native environment stepping and device episode resets; its
-[systems evidence](flightlib-cuda/docs/cuda5-performance.md) compares task/reset
-fusion and explains the optional matched wall-time regression gate.
-CUDA-6 adds [resident PyTorch integration and graph replay](flightlib-cuda/python/README.md);
-its [performance evidence](flightlib-cuda/docs/cuda6-performance.md) measures actual
-Python stepping and a small GPU policy loop, including remaining overhead.
-The [parallel CPU comparison](flightlib-cuda/docs/cpu-parallel-performance.md)
-sweeps OpenMP and multiprocessing against matched GPU environment stepping.
-CUDA-8 completes the [resident core API](flightlib-cuda/docs/core-api.md).
-The final [CUDA-9 plan](flightlib-cuda/docs/cuda9-usage-plan.md) covers headless
-usage wrappers, resident RL rollouts, a training/evaluation example and package
-qualification. These additions are planned, not yet implemented. Collision
-geometry, rendering and all sensors remain later extensions.
-
-The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
-pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and
-the native dependencies for the CPU `flightlib` and `flightgym` builds. On
-Windows, use Docker Desktop's WSL 2 backend with an NVIDIA driver that supports
-CUDA 13.3 (R610 or later).
-
-From the repository root:
+The supported development path is the existing Linux NVIDIA Docker Compose
+container (also tested through Windows Docker Desktop/WSL2). Configure
+`FLIGHTMARE_CUDA_ARCHITECTURES` for your GPU; the checked-in default targets the
+RTX 5070 Ti. See [local development](docs/local-development.md) for toolchain,
+reports, CPU oracle integrity and known sanitizer/multi-GPU coverage limits.
 
 ```sh
 docker compose up -d --build
-docker compose exec dev bash docker/check.sh
-docker compose exec dev bash
+docker compose exec -T dev bash scripts/setup-cuda-python.sh
+docker compose exec -T dev python3 scripts/local_ci.py verify
 ```
 
-The check runs CUDA contract tests, the CPU parity suite, and a Python reset/step
-test against the freshly built `flightgym`. The upstream suite and installation
-smoke are available through the separate `legacy` and `doctor` profiles. The
-local architecture defaults to `120-real` for the RTX 5070 Ti. For a different
-GPU, set `FLIGHTMARE_CUDA_ARCHITECTURES` before starting Compose. The check uses
-four build jobs by default. Set `CMAKE_BUILD_PARALLEL_LEVEL` in the container
-to change that limit.
-
-The checkout is mounted at `/workspace`. The named `/build` volume keeps the
-CPU and CUDA build trees and compiler cache between container starts.
-`PYTHONPATH` points to the CMake-built extension in `/build/flightlib`.
-The CPU oracle uses installed dependencies and `ENABLE_FAST=OFF` to preserve
-its NaN-based command validation. `docker compose stop` stops the container
-and keeps its cache.
-
-### CPU parity tests
-
-`flightmare-parity-tests` links the frozen C++ simulator. The full dev check
-runs it automatically. For a faster CPU-only loop, run the suite directly or
-filter to a behavior group with CTest's `-R` option.
+Verify builds native/Python packages and tests a fresh install outside the source
+checkout, including train/save/reload/evaluate. Core is installed with CMake;
+`flightrl-cuda` is a separate Python distribution with a small CUDA library.
+For a persistent installation inside the prepared container:
 
 ```sh
-docker compose exec dev bash docker/check-parity.sh
-docker compose exec dev bash docker/check-parity.sh -R WorldBoxContract
-docker compose exec -T dev bash -c '/build/flightmare-parity-tests/flightmare_oracle_trace > /build/flightmare-oracle.json'
+docker compose exec -T dev cmake --install /build/flightlib-cuda-python-native --prefix /build/flightmare-install
+docker compose exec -T dev /build/flightlib-cuda-python/bin/pip install --no-deps --no-build-isolation ./flightrl-cuda
 ```
 
-The versioned JSON contains deterministic reset inputs, commands, and
-per-step C++ outputs. Physics traces include all 25 state fields, simulation
-time, and four rotor speeds and thrusts. The scalar environment trace records
-observation order, reward, and the terminal flag and reward adjustment. This
-trace steps the scalar environment continuously. The vector environment tests
-exercise auto-reset separately, checking the returned reset observation and
-terminal reward across lanes using the CPU's random resets.
+Set `PYTHONPATH=/build/flightmare-install` when using the installed core. Optional
+`flightrl-cuda[spaces]` supplies Gymnasium Box spaces; the host adapter is not a
+Gymnasium five-return Env or Stable Baselines VecEnv subclass.
 
-## Updates
- *  17.11.2020 [Spotlight](https://youtu.be/8JyrjPLt8wo) Talk at CoRL 2020 
- *  04.09.2020 Release Flightmare
+## Tensor simulation
 
-## Publication
+```python
+import torch
+from flightrl_cuda import Config, TensorEnv
 
-If you use this code in a publication, please cite the following paper **[PDF](http://rpg.ifi.uzh.ch/docs/CoRL20_Yunlong.pdf)**
-
+env = TensorEnv(Config(num_envs=100, slots=100))  # 10,000 independent agents
+env.reset()
+env.capture()
+env.actions.zero_()                            # float32 CUDA [10_000, 4]
+for _ in range(100):
+    result = env.step()                        # borrowed GPU outputs
+    observation = result.observation           # [10_000, 12]
+    grouped = env.grouped.observation          # zero-copy [100, 100, 12]
+env.close()
 ```
+
+N = environments × agents. A CUDA thread advances one agent's fused dynamics;
+threads for agents inside one environment run in parallel just like agents in
+separate environments. Grouping is an indexing/ownership convention, not a
+shared swarm reward, inter-agent collision or communication model. Increasing N
+exposes more GPU parallelism until compute, occupancy or memory limits dominate.
+The scalar integration dependency within one agent remains sequential.
+
+Construct and submit on one chosen Torch stream. Bound storage/shapes stay fixed;
+mutate values in place. Results are borrowed and overwritten on the next step;
+copy into resident history if retaining them. Setup/configuration changes require
+recapture. `.cpu()`, NumPy adapters, logging and checkpoints are explicit transfer
+boundaries. Configuration accepts packaged defaults and legacy YAML with explicit
+overrides; `max_t` remains metadata rather than an added episode timeout.
+
+## RL example and performance
+
+```sh
+docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 1024 --steps 64 --updates 20 --checkpoint /build/policy.pt
+docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 1024 --steps 64 --evaluate --checkpoint /build/policy.pt
+```
+
+On the tested RTX 5070 Ti / Ryzen 9800X3D, matched 32-step rollouts plus GAE and
+two PPO epochs measured about **3.4×** speedup at 1,024 agents and **4.1–4.3×**
+at 16,384 against the best tested parallel CPU configuration, including CPU
+physics with a GPU learner. CPU wins at very small batches. These are controlled
+iteration benchmarks, not convergence or sim-to-real certification. Resident
+collection traces show zero host/device transfers and zero allocations; PPO
+updates allocate temporary storage and are measured separately.
+
+See [RL evidence and reproduction](flightlib-cuda/docs/cuda9-validation.md) and
+[v0.1.1 grouping/scaling results](flightlib-cuda/docs/v0.1.1-scaling.md).
+Large batches consume rollout and learner memory as well as simulation state;
+there is no claim of unbounded batch size. Further optimization should follow
+measured occupancy/register pressure, launch overhead and learner cost.
+
+## Upstream attribution
+
+This project builds on [UZH RPG Flightmare](https://github.com/uzh-rpg/flightmare).
+The original source and frozen CPU behavior oracle are retained. The upstream
+Unity features are described in the [original documentation](https://flightmare.readthedocs.io/).
+Please retain the MIT [license](LICENSE) and cite the original work:
+
+```bibtex
 @inproceedings{song2020flightmare,
-    title={Flightmare: A Flexible Quadrotor Simulator},
-    author={Song, Yunlong and Naji, Selim and Kaufmann, Elia and Loquercio, Antonio and Scaramuzza, Davide},
-    booktitle={Conference on Robot Learning},
-    year={2020}
+  title={Flightmare: A Flexible Quadrotor Simulator},
+  author={Song, Yunlong and Naji, Selim and Kaufmann, Elia and Loquercio, Antonio and Scaramuzza, Davide},
+  booktitle={Conference on Robot Learning},
+  year={2020}
 }
 ```
-
-## License
-This project is released under the MIT License. Please review the [License file](LICENSE) for more details.

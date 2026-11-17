@@ -1,5 +1,11 @@
 # Flightlib CUDA
 
+Version **0.1.1** completes the scoped headless core and usage implementation.
+Start with the [repository quick start](../README.md),
+[implemented usage contracts](docs/cuda9-usage-contract.md), and
+[current scaling evidence](docs/v0.1.1-scaling.md). The historical layer notes
+below record development chronology, not unfinished implementation requirements.
+
 CUDA rewrite of Flightlib with persistent tensor state and unchanged Flightmare
 quadrotor dynamics. No PhysX backend.
 

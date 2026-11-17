@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1 — scoped headless implementation
+
+- Publish the implemented CUDA core, tensor/host usage and resident RL capability
+  boundary, installation, migration and performance entry points in the README.
+- Add explicit agents-per-environment selection to the matched RL benchmark;
+  qualify 100/1,000-agent single environments against CPU threads/processes and
+  equivalent total-lane groupings, plus simulation-only scaling to 1,048,576 lanes.
+- Keep physics, frozen contracts and numerical/performance gates unchanged.
+  Rendering, sensors and interacting swarm physics remain separate extensions.
+
 ## 0.1.0 — development baseline
 
 - CUDA development container and frozen CPU behavior oracle.
