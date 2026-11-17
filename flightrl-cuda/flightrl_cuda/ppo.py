@@ -7,7 +7,7 @@ This is not a binary-compatible implementation of legacy TensorFlow PPO2.
 import math
 import torch
 from torch import nn
-from .kernels import BoundKernel
+from .kernels import BoundKernel, storage_signature
 
 
 class ActorCritic(nn.Module):
@@ -77,8 +77,27 @@ class Rollout:
             self.inference_graph = torch.cuda.CUDAGraph()
             with torch.cuda.device(device), torch.cuda.graph(self.inference_graph):
                 policy.infer(env.result.observation, self.inference_noise, self.work)
+        # Retain original external storage even if a Parameter's .data is replaced.
+        # Graph capture itself does not own arbitrary external input allocations.
+        self._bound = {k:(t.detach(),storage_signature(t)) for k,t in self._tensors().items()}
+
+    def _tensors(self):
+        result={k:t for k,t in vars(self).items() if isinstance(t,torch.Tensor)}
+        result.update(('work.'+k,t) for k,t in self.work.items())
+        result.update(('policy.'+k,t) for k,t in self.policy.named_parameters())
+        result['env.observation']=self.env.result.observation
+        return result
+
+    def _check_storage(self):
+        current=self._tensors()
+        if current.keys()!=self._bound.keys() or any(storage_signature(current[k])!=sig for k,(_,sig) in self._bound.items()):
+            raise ValueError('rollout/policy bound storage changed; reconstruct rollout')
 
     def infer(self, noise):
+        self.env._ready(); self._check_storage()
+        self._infer(noise)
+
+    def _infer(self, noise):
         if self.inference_graph is None:
             self.policy.infer(self.env.result.observation, noise, self.work)
         else:
@@ -88,19 +107,21 @@ class Rollout:
     @torch.no_grad()
     def collect(self, *, resample=True):
         self.env._ready()
+        self._check_storage()
         if resample: self.noise.normal_()
         for t in range(self.steps):
             self.observation[t].copy_(self.env.result.observation)
-            self.infer(self.noise[t])
+            self._infer(self.noise[t])
             self.latent[t].copy_(self.work['latent']); self.action[t].copy_(self.work['action'])
             self.value[t].copy_(self.work['value'].view(-1)); self.logp[t].copy_(self.work['logp'])
             result = self.env.step(self.work['action'])
             self.reward[t].copy_(result.reward); self.done[t].copy_(result.done); self.valid[t].copy_(result.valid)
-        self.infer(self.zero_noise)
+        self._infer(self.zero_noise)
         self.last_value.copy_(self.work['value'].view(-1))
 
     @torch.no_grad()
     def finish(self, gamma=.99, lam=.95):
+        self.env._ready(); self._check_storage()
         if not 0<=gamma<=1 or not 0<=lam<=1: raise ValueError('invalid GAE parameters')
         if self.gae_kernel is not None:
             self.gae_kernel.run(self.env.num_envs,self.steps,gamma,lam)
@@ -117,6 +138,8 @@ class Rollout:
 
 
 def ppo_update(policy, optimizer, rollout, epochs=4, clip=.2, vf_coef=.5, ent_coef=0., max_grad_norm=.5):
+    if not all(math.isfinite(x) for x in (clip,vf_coef,ent_coef,max_grad_norm)) or clip<0 or vf_coef<0 or max_grad_norm<=0:
+        raise ValueError('invalid PPO coefficients or gradient norm')
     if epochs<1 or not bool((rollout.valid==1).all()):
         raise ValueError('PPO requires positive epochs and an entirely valid rollout')
     # Learner boundary, outside resident collection. Fail before touching Adam

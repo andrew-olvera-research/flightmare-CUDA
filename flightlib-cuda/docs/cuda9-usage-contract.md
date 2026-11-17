@@ -1,6 +1,6 @@
 # CUDA-9 usage contracts
 
-Implementation contract for `flightrl-cuda` 0.1.0. This package composes the
+Implementation contract for `flightrl-cuda`, hardened in 0.1.2. This package composes the
 existing Environment; it does not own a second dynamics implementation. The
 frozen v1 simulation arena, state layout, model preparation and equations remain
 unchanged. Packaging/public README and release qualification are separate final
@@ -45,6 +45,18 @@ identity is not. Accepted Config/model metadata is copied to prevent accidental
 mutation from misrepresenting device configuration. `configure` validates setup,
 preserves physical state and requires recapture; capacity/device changes require
 a new wrapper. Reset mode/autoreset changes also require recapture.
+`config` and `auto_reset` are read-only properties; use `configure` and
+`set_auto_reset`. Changing seed through `configure` is rejected: use `seed()`.
+
+Captured policy, history and workspace storage is retained and checked before
+collection/GAE. Replace a policy's storage or architecture by constructing a new
+Rollout; ordinary in-place optimizer updates remain supported. Environment
+action/output replacements are rejected before submission or pending collection.
+PPO requires all transitions valid and finite learning inputs, rejecting bad
+batches before optimizer mutation. GAE still supports invalid masks independently.
+Finite loss/gradient checks protect each optimizer step; a multi-epoch call does
+not roll back earlier successful epochs if a later epoch fails. These learner
+checks synchronize at the update boundary, outside allocation-free collection.
 
 ## Work decomposition
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2 — usage and training hardening
+
+- Reject invalid/nonfinite PPO inputs before optimizer mutation and reject
+  nonfinite losses/gradients or invalid gradient limits.
+- Make accepted configuration/autoreset properties read-only; require explicit
+  seed() for native RNG changes instead of silently changing metadata.
+- Retain and guard captured policy/workspace/history storage, validate RL kernel
+  layout metadata and reject replaced environment buffers before submission.
+- Add 12 adversarial regressions, grouped trace/performance checks and sustained
+  training validation. Dynamics, frozen tensors and oracle tolerances unchanged.
+
 ## 0.1.1 — scoped headless implementation
 
 - Publish the implemented CUDA core, tensor/host usage and resident RL capability

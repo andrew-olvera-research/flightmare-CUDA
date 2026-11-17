@@ -4,7 +4,7 @@ from enum import IntEnum
 import torch
 from . import _native
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 ModelConfig = _native.ModelConfig
 TaskConfig = _native.TaskConfig
 load_model = _native.load_model

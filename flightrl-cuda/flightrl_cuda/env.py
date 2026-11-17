@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import torch
 from flightlib_cuda import Environment
 from .config import Config
-from .kernels import BoundKernel
+from .kernels import BoundKernel, storage_signature
 
 
 @dataclass
@@ -26,6 +26,9 @@ class TensorEnv:
     @property
     def config(self): return self._config.copy()
 
+    @property
+    def auto_reset(self): return self._auto_reset
+
     def __init__(self, config=None, *, random_reset=True, auto_reset=True):
         self._config = (config or Config()).copy()
         c = self.config
@@ -33,7 +36,7 @@ class TensorEnv:
         self.engine = Environment(c.num_envs, c.slots, control_dt=c.control_dt, device=c.device,
                                   seed=c.seed, models=[c.model])
         self.engine.configure_task(c.task())
-        self.random_reset, self.auto_reset = random_reset, auto_reset
+        self.random_reset, self._auto_reset = random_reset, bool(auto_reset)
         self.engine._native.auto_reset(auto_reset)
         self.actions = self.engine.actions.view(self.num_envs, 4)
         self.running_return = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
@@ -53,6 +56,9 @@ class TensorEnv:
         self._pending, self._closed, self.graph = False, False, False
         self.stats_graph = None
         self.bind_statistics()
+        entries=[(self,k) for k in ('actions','running_return','running_length')]
+        entries.extend((self.result,k) for k in Transition.__dataclass_fields__)
+        self._fixed_tensors=[('self' if owner is self else 'result',k,getattr(owner,k).detach(),storage_signature(getattr(owner,k))) for owner,k in entries]
 
     def bind_statistics(self):
         self.stream = torch.cuda.current_stream(self.device) if self.device.type=='cuda' else None
@@ -68,6 +74,13 @@ class TensorEnv:
         self._check_stream()
         if self._closed: raise RuntimeError('environment is closed')
         if self._pending: raise RuntimeError('collect the pending step first')
+        self._check_storage()
+
+    def _check_storage(self):
+        for source,k,retained,signature in getattr(self,'_fixed_tensors',()):
+            owner=self if source=='self' else self.result
+            if storage_signature(getattr(owner,k))!=signature:
+                raise ValueError('environment bound storage changed; reconstruct wrapper')
 
     def _check_stream(self):
         if self.stream is not None and torch.cuda.current_stream(self.device)!=self.stream:
@@ -94,7 +107,7 @@ class TensorEnv:
 
     def set_auto_reset(self, enabled):
         self._ready(); self.engine._native.auto_reset(enabled)
-        self.auto_reset, self.graph, self.stats_graph = bool(enabled), False, None
+        self._auto_reset, self.graph, self.stats_graph = bool(enabled), False, None
 
     def seed(self, seed):
         self._ready()
@@ -136,6 +149,7 @@ class TensorEnv:
     def step_wait(self):
         self._check_stream()
         if self._closed or not self._pending: raise RuntimeError('no pending step')
+        self._check_storage()
         if self.stats_graph is None: self._statistics()
         else: self.stats_graph.replay()
         self._pending = False

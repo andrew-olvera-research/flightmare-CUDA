@@ -1,6 +1,7 @@
 # Flightlib CUDA
 
-Version **0.1.1** completes the scoped headless core and usage implementation.
+Version **0.1.2** hardens the scoped headless core and usage implementation.
+See the [hardening report](docs/v0.1.2-hardening.md) for fixes and validation limits.
 Start with the [repository quick start](../README.md),
 [implemented usage contracts](docs/cuda9-usage-contract.md), and
 [current scaling evidence](docs/v0.1.1-scaling.md). The historical layer notes

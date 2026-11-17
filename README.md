@@ -1,4 +1,7 @@
-# Flightmare CUDA — v0.1.1
+# Flightmare CUDA — v0.1.2
+
+The [hardening report](flightlib-cuda/docs/v0.1.2-hardening.md) records invalid
+training rejection, setup/capture guards and current validation limits.
 
 A CUDA-accelerated implementation of Flightmare's headless Flightlib simulation
 and quadrotor task, with persistent GPU state, PyTorch tensor APIs and resident RL.

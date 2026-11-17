@@ -6,6 +6,10 @@ import torch
 _library = None
 
 
+def storage_signature(t):
+    return (t.data_ptr(),tuple(t.shape),t.stride(),t.dtype,t.device,t.requires_grad)
+
+
 def library():
     global _library
     if _library is None:

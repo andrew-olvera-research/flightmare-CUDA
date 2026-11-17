@@ -37,3 +37,51 @@ def test_bad_rollout_rejected_before_optimizer_mutation(failure):
     assert not opt.state
     assert all(torch.equal(a,b) for a,b in zip(before,p.parameters()))
     env.close()
+
+@pytest.mark.parametrize('target',['policy','history','workspace'])
+def test_replaced_capture_storage_is_rejected(target):
+    env=TensorEnv(Config(num_envs=3)); env.reset()
+    p=ActorCritic().cuda(); h=Rollout(3,env,p)
+    if target=='policy':
+        old=p.actor.bias.detach()
+        p.actor.bias.data=torch.ones_like(p.actor.bias)
+    elif target=='history': h.returns=torch.full_like(h.returns,99)
+    else: h.work['action']=torch.ones_like(h.work['action'])
+    with pytest.raises(ValueError,match='storage'):
+        if target=='history': h.finish()
+        else: h.collect()
+    env.close()
+
+
+def test_autoreset_mode_cannot_diverge_from_native():
+    env=TensorEnv(Config(num_envs=1),random_reset=False); env.reset()
+    with pytest.raises(AttributeError): env.auto_reset=False
+    env.set_auto_reset(False); env.actions.fill_(-1)
+    result=env.step()
+    assert torch.equal(result.observation,result.transition_observation)
+    env.close()
+
+@pytest.mark.parametrize('field',['actions','reward'])
+def test_environment_replacement_rejected_before_step(field):
+    env=TensorEnv(Config(num_envs=3)); env.reset(); before=env.engine.time.clone()
+    if field=='actions': env.actions=torch.ones_like(env.actions)
+    else: env.result.reward=torch.ones_like(env.result.reward)
+    with pytest.raises(ValueError,match='storage'): env.step()
+    assert torch.equal(before,env.engine.time)
+    env.close()
+
+
+def test_pending_step_rejects_output_replacement():
+    env=TensorEnv(Config(num_envs=3)); env.reset(); env.step_async()
+    env.result.reward=env.result.reward.clone()
+    with pytest.raises(ValueError,match='storage'): env.step_wait()
+    env.close()
+
+
+def test_invalid_gradient_limit_rejected_before_update():
+    env=TensorEnv(Config(num_envs=2)); env.reset()
+    p=ActorCritic().cuda(); h=Rollout(2,env,p); h.collect(); h.finish()
+    opt=torch.optim.Adam(p.parameters()); before=[x.detach().clone() for x in p.parameters()]
+    with pytest.raises(ValueError): ppo_update(p,opt,h,max_grad_norm=-1)
+    assert not opt.state and all(torch.equal(a,b) for a,b in zip(before,p.parameters()))
+    env.close()

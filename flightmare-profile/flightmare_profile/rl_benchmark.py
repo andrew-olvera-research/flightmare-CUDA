@@ -84,7 +84,7 @@ class CpuEnv(TensorEnv):
         self._config, self.mode = config.copy(), mode
         self.num_envs = config.num_envs*config.slots
         self.device = torch.device(policy_device)
-        self._closed, self._pending, self.auto_reset = False, False, True
+        self._closed, self._pending, self._auto_reset = False, False, True
         self.processes, self.connections = [], []
         n = self.num_envs
         if workers<1 or workers>n: raise ValueError('workers must be between 1 and N')
