@@ -1,5 +1,11 @@
 # Resident Python environment
 
+For physical stepping without task/reward/reset behavior, use the standalone
+[`Core` API](../docs/core-api.md). It includes both command modes, selected
+state/reset operations, optional derivative/controller/motor helpers, borrowed
+model/state/motor views, and [a non-RL example](examples/core.py). `Environment`
+below remains a compatibility consumer with unchanged task semantics.
+
 CUDA-6 exposes the existing Flightlib CUDA environment through PyTorch tensors.
 Physics, task semantics and the v1 tensor contract are unchanged. The extension
 uses pybind11 and DLPack without linking libtorch. Version: 0.1.0.

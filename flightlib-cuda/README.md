@@ -19,6 +19,8 @@ and qualifies the standalone accelerated package.
 - [CUDA-6 performance and validation evidence](docs/cuda6-performance.md)
 - [CUDA-7 core support and numerical fidelity contract](docs/flightlib-support.md)
 - [CUDA-7 validation and performance evidence](docs/cuda7-validation.md)
+- [CUDA-8 standalone Core API and public-method checklist](docs/core-api.md)
+- [CUDA-8 validation and performance evidence](docs/cuda8-validation.md)
 
 Run host and device contract checks inside the existing dev container:
 

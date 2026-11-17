@@ -1,4 +1,6 @@
 #include "flightlib_cuda/lifecycle.hpp"
+#include "flightlib_cuda/dynamics.hpp"
+#include "dynamics_launch.hpp"
 #include <cuda_runtime.h>
 #include <algorithm>
 namespace flightlib_cuda::v1 {
@@ -52,6 +54,18 @@ void stateLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<Bin
     static_cast<const Mask*>(b[0].tensor.data),static_cast<const Scalar*>(b[1].tensor.data),
     static_cast<const Scalar*>(b[2].tensor.data),reset!=nullptr);
 }
+void commandLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void*){
+  commandKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,
+    static_cast<const Mask*>(b[0].tensor.data),static_cast<const CommandMode*>(b[1].tensor.data),
+    static_cast<const Scalar*>(b[2].tensor.data),static_cast<const Scalar*>(b[3].tensor.data));
+}
+void runLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void*){
+  commandLaunch(v,stream,b,nullptr);detail::launchDynamics(v,stream,nullptr,true);
+}
+void validateCommands(const Simulation& s,const Bindings& b){const Offset n=s.views().topology.batch.lanes;
+  validate(b,{spec(DType::UInt8,{n}),spec(DType::UInt8,{n}),spec(DType::Float32,{n}),spec(DType::Float32,{4,n})});}
+void validateState(const Simulation& s,const Bindings& b){const Offset n=s.views().topology.batch.lanes;
+  validate(b,{spec(DType::UInt8,{n}),spec(DType::Float32,{25,n}),spec(DType::Float32,{n})});}
 }
 Bindings bindStateInput(Simulation& s,BindingRequest selected,BindingRequest x,BindingRequest time){
   const Offset n=s.views().topology.batch.lanes;
@@ -70,11 +84,11 @@ void resetState(Simulation& s,const Bindings& b){const Offset n=s.views().topolo
 void setState(Simulation& s,const Bindings& b){const Offset n=s.views().topology.batch.lanes;
   validate(b,{spec(DType::UInt8,{n}),spec(DType::Float32,{25,n}),spec(DType::Float32,{n})});
   s.enqueue(stateLaunch,nullptr,&b);}
-void setCommand(Simulation& s,const Bindings& b){const Offset n=s.views().topology.batch.lanes;
-  validate(b,{spec(DType::UInt8,{n}),spec(DType::UInt8,{n}),spec(DType::Float32,{n}),spec(DType::Float32,{4,n})});
-  s.enqueue([](const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void*){
-    commandKernel<<<(v.topology.batch.lanes+127)/128,128,0,stream>>>(v,
-      static_cast<const Mask*>(b[0].tensor.data),static_cast<const CommandMode*>(b[1].tensor.data),
-      static_cast<const Scalar*>(b[2].tensor.data),static_cast<const Scalar*>(b[3].tensor.data));
-  },nullptr,&b);}
+void setCommand(Simulation& s,const Bindings& b){validateCommands(s,b);s.enqueue(commandLaunch,nullptr,&b);}
+void resetStateFrom(Simulation& s,const Bindings& b,cudaStream_t stream){validateState(s,b);s.enqueueFrom(stream,stateLaunch,reinterpret_cast<void*>(1),&b);}
+void setStateFrom(Simulation& s,const Bindings& b,cudaStream_t stream){validateState(s,b);s.enqueueFrom(stream,stateLaunch,nullptr,&b);}
+void setCommandFrom(Simulation& s,const Bindings& b,cudaStream_t stream){validateCommands(s,b);s.enqueueFrom(stream,commandLaunch,nullptr,&b);}
+void runDynamics(Simulation& s,const Bindings& b){validateCommands(s,b);s.enqueue(runLaunch,nullptr,&b);}
+void runDynamicsFrom(Simulation& s,const Bindings& b,cudaStream_t stream){validateCommands(s,b);s.enqueueFrom(stream,runLaunch,nullptr,&b);}
+Graph captureRun(Simulation& s,const Bindings& b){validateCommands(s,b);return s.capture(runLaunch,nullptr,&b);}
 } // namespace flightlib_cuda::v1

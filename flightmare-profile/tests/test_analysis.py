@@ -3,11 +3,23 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
-from flightmare_profile.__main__ import summarize, trace_summary, performance_gate, launches, validate_memory_trace
+from flightmare_profile.__main__ import summarize, trace_summary, performance_gate, launches, validate_memory_trace, validate_core_telemetry, kernel_nodes
 from flightmare_profile.cpu_parallel import validate
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_core_full_telemetry_and_launch_budget(self):
+        ref = dict(state=[0.]*25, time=2., motor_omega=[100.]*4, motor_thrust=[3.]*4)
+        validate_core_telemetry(ref, ref)
+        for key in ('state', 'motor_omega', 'motor_thrust'):
+            bad = copy.deepcopy(ref); bad[key][-1] += 1
+            with self.assertRaises(ValueError): validate_core_telemetry(bad, ref)
+        bad = copy.deepcopy(ref); bad['time'] += .01
+        with self.assertRaises(ValueError): validate_core_telemetry(bad, ref)
+        self.assertEqual(kernel_nodes('core-graph'), 1)
+        self.assertEqual(kernel_nodes('core-run-graph'), 2)
+        self.assertEqual(kernel_nodes('helpers'), 9)
+
     def result(self):
         return {'validated': True, 'samples': [{'submit_ms': 1, 'wall_ms': 2, 'gpu_timeline_ms': 1.8}],
                 'calls': {'allocations': 0, 'frees': 0, 'copies': 0, 'host_syncs': 0, 'kernel_launches': 10}}

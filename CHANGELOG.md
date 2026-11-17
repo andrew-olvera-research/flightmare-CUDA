@@ -37,3 +37,7 @@ version does not imply complete integrated Flightmare parity.
   parity fixes, saturated YAML Euler/reward regression, randomized model/update
   trajectories, explicit numerical budgets, and optimized CPU differential gates
   in local verification and profiling. Frozen oracle and tensor contracts unchanged.
+- [CUDA-8] Standalone resident Core API, stream bridges and graph execution for
+  accepted-command and command-plus-step paths, nine optional batched CPU helpers,
+  complete public-core-method audit, external scene metadata, installed Python/C++
+  consumers and core systems/CPU telemetry probes. Frozen contracts unchanged.

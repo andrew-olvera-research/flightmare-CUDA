@@ -757,6 +757,33 @@ orientations. [Validation/performance evidence](cuda7-validation.md) records the
 qualified workload envelope and remaining limits. No higher-fidelity physics,
 collision backend or new RL interface is introduced in this layer.
 
+## CUDA-8 standalone core and optional operations
+
+The [Core API](core-api.md) is independent of task Environment and includes an
+explicit public-method checklist against Quadrotor/QuadrotorDynamics. Reset,
+state assignment, command acceptance, state/model/motor access and stepping are
+available through native C++ and resident Python interfaces. Host model metadata
+is copied; validated setup preserves physical state and invalidates graphs.
+
+`step` runs one D kernel. `step(commands=True)` submits command acceptance then
+D in one stream bridge; a specialized D entry skips rejected selected commands,
+preserving CPU run(command,dt) behavior. It needs no additional lane mask or
+staging buffer. Captured replay uses one graph API call with one/two kernel nodes.
+The ordinary D path retains its existing numerical ordering and register budget.
+
+Nine optional bound operations expose derivative, controller, motor, conversion,
+clamp and world-box helpers. Shared inlined device functions prevent duplicate
+equations; their caller-owned input/output allocations are validated and retained
+at binding. They launch only on explicit invocation. Core uses the existing arena
+superset; there are no new frozen tensor definitions. Python size/collision are
+separate external metadata, never interpreted as geometry-query results.
+
+Local verify exercises actual CPU helper differentials, public Python trajectory
+replay, partial updates, rejection, graphs, ownership/streams, installation and
+standalone Python/C++ consumers. The profiler measures core accepted-command and
+command-plus-step paths, each with/without graphs, stable storage, CPU telemetry
+comparison and separate launch/transfer traces. See [CUDA-8 evidence](cuda8-validation.md).
+
 ## Legacy source anchors
 
 - [State indices](../../flightlib/include/flightlib/common/quad_state.hpp)

@@ -1,4 +1,5 @@
 #include "flightlib_cuda/environment.hpp"
+#include "flightlib_cuda/operations.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <ATen/dlpack.h>
@@ -47,6 +48,55 @@ BindingRequest request(py::object tensor,int device,DType dtype){
   std::shared_ptr<void> owner(retained,[](void* p){py::gil_scoped_acquire gil;Py_DECREF(static_cast<PyObject*>(p));});
   return {{ptr,spec,strides},spec,owner};
 }
+void stableBindings(const Bindings& bindings){
+  for(auto& b:bindings.inputs()){
+    auto owner=py::reinterpret_borrow<py::object>(static_cast<PyObject*>(b.lifetime.get()));
+    if(owner.attr("data_ptr")().cast<std::uintptr_t>()!=reinterpret_cast<std::uintptr_t>(b.tensor.data))
+      throw std::invalid_argument("bound tensor storage was resized; rebind and recapture");
+  }
+}
+struct NativeCore {
+  Simulation sim;Bindings state_input,command_input;Graph graph;
+  bool state_bound=false,command_bound=false,captured=false,captured_commands=false;
+  std::vector<ModelConfig> models;
+  NativeCore(Index E,Index A,float dt,int device,const std::vector<ModelConfig>& m,
+             const std::vector<Index>& ids,const std::vector<Mask>& active,const std::vector<float>& bounds):sim([&]{
+    RuntimeConfig c;c.environments=E;c.slots=A;c.models=m.size();c.substeps=prepareSchedule(dt).size();c.device=device;return c;}()){
+    setup(m,ids,active,bounds,dt);
+  }
+  void setup(const std::vector<ModelConfig>& m,const std::vector<Index>& ids,const std::vector<Mask>& active,const std::vector<float>& bounds,float dt){
+    auto next=m;configure(sim,m,ids,active,bounds,dt);models.swap(next);
+  }
+  void bindState(py::object selected,py::object x,py::object time){
+    state_input=bindStateInput(sim,request(selected,sim.device(),DType::UInt8),request(x,sim.device(),DType::Float32),request(time,sim.device(),DType::Float32));
+    state_bound=true;
+  }
+  void bindCommand(py::object selected,py::object mode,py::object time,py::object payload){
+    auto b=bindCommandInput(sim,request(selected,sim.device(),DType::UInt8),request(mode,sim.device(),DType::UInt8),
+                            request(time,sim.device(),DType::Float32),request(payload,sim.device(),DType::Float32));
+    command_input=std::move(b);command_bound=true;graph=Graph{};captured=false;
+  }
+  void checkCommands(){if(!command_bound)throw std::logic_error("bind commands first");stableBindings(command_input);}
+  void state(std::uintptr_t stream,bool reset){
+    if(!state_bound)throw std::logic_error("bind state input first");stableBindings(state_input);
+    if(reset)resetStateFrom(sim,state_input,reinterpret_cast<cudaStream_t>(stream));
+    else setStateFrom(sim,state_input,reinterpret_cast<cudaStream_t>(stream));
+  }
+  void command(std::uintptr_t stream){checkCommands();setCommandFrom(sim,command_input,reinterpret_cast<cudaStream_t>(stream));}
+  void step(std::uintptr_t stream,bool commands,bool replay){
+    if(commands)checkCommands();auto s=reinterpret_cast<cudaStream_t>(stream);
+    if(replay){if(!captured)throw std::logic_error("capture before graph replay");
+      if(commands!=captured_commands)throw std::invalid_argument("command mode differs from captured graph");sim.replayFrom(graph,s);}
+    else if(commands)runDynamicsFrom(sim,command_input,s);else stepDynamicsFrom(sim,s);
+  }
+  void capture(bool commands){if(commands)checkCommands();graph=commands?captureRun(sim,command_input):captureDynamics(sim);captured=true;captured_commands=commands;}
+};
+struct NativeOperation {
+  Simulation sim;CoreOperation op;Bindings bindings;
+  NativeOperation(NativeCore& core,CoreOperation operation,py::object input,py::object output):sim(core.sim),op(operation),
+    bindings(bindOperation(sim,op,request(input,sim.device(),DType::Float32),request(output,sim.device(),DType::Float32))){}
+  void run(std::uintptr_t stream,float dt){stableBindings(bindings);evaluateOperationFrom(sim,op,bindings,reinterpret_cast<cudaStream_t>(stream),dt);}
+};
 struct NativeEnvironment {
   Simulation sim;Bindings bindings;Graph graph;bool bound=false,captured=false,captured_random=true;
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
@@ -89,6 +139,26 @@ PYBIND11_MODULE(_native,m){
     .def_readwrite("action_mean",&TaskConfig::action_mean).def_readwrite("action_scale",&TaskConfig::action_scale)
     .def_readwrite("goal",&TaskConfig::goal).def_readwrite("reward_coeff",&TaskConfig::reward_coeff);
   m.def("load_model",&loadModel);m.def("legacy_task_config",&legacyTaskConfig);
+  py::enum_<CoreOperation>(m,"CoreOperation")
+    .value("DERIVATIVE",CoreOperation::Derivative).value("CONTROLLER",CoreOperation::Controller)
+    .value("MOTORS",CoreOperation::Motors).value("OMEGA_TO_THRUST",CoreOperation::OmegaToThrust)
+    .value("THRUST_TO_OMEGA",CoreOperation::ThrustToOmega).value("CLAMP_THRUST",CoreOperation::ClampThrust)
+    .value("CLAMP_MOTOR_OMEGA",CoreOperation::ClampMotorOmega).value("CLAMP_BODY_RATES",CoreOperation::ClampBodyRates)
+    .value("CONSTRAIN_WORLD",CoreOperation::ConstrainWorld);
+  py::class_<NativeOperation>(m,"NativeOperation")
+    .def(py::init<NativeCore&,CoreOperation,py::object,py::object>()).def("run",&NativeOperation::run);
+  m.def("prepare_schedule",[](float dt,float max_dt){return prepareSchedule(dt,max_dt);},py::arg("control_dt"),py::arg("max_dt")=.0025f);
+  py::class_<NativeCore>(m,"NativeCore")
+    .def(py::init<Index,Index,float,int,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
+    .def_property_readonly("arena_bytes",[](NativeCore& c){return c.sim.allocationPlan().arena_bytes;})
+    .def_property_readonly("model_configs",[](NativeCore& c){return c.models;})
+    .def("bind_state",&NativeCore::bindState).def("bind_command",&NativeCore::bindCommand)
+    .def("state",&NativeCore::state).def("set_command",&NativeCore::command)
+    .def("step",&NativeCore::step).def("capture",&NativeCore::capture).def("configure",&NativeCore::setup)
+    .def("tensor",[](NativeCore& c,const std::string& name){return exportTensor(c.sim,name);})
+    .def("wait",[](NativeCore& c,std::uintptr_t s){c.sim.waitOn(reinterpret_cast<cudaStream_t>(s));})
+    .def("record_usage",[](NativeCore& c,std::uintptr_t s){c.sim.recordUsage(reinterpret_cast<cudaStream_t>(s));})
+    .def("synchronize",[](NativeCore& c){c.sim.synchronize();});
   py::class_<NativeEnvironment>(m,"NativeEnvironment")
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})

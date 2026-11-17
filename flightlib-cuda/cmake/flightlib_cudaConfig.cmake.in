@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+if(@FLIGHTLIB_CUDA_BUILD_RUNTIME@ OR @FLIGHTLIB_CUDA_TEST_DEVICE@)
+  find_dependency(CUDAToolkit 13.0)
+  find_dependency(Eigen3)
+  find_dependency(yaml-cpp)
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/flightlib_cudaTargets.cmake")
+check_required_components(flightlib_cuda)

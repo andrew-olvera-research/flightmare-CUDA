@@ -1,4 +1,5 @@
 #include "flightlib_cuda/lifecycle.hpp"
+#include "flightlib_cuda/operations.hpp"
 #include "flightlib/objects/quadrotor.hpp"
 #include <iostream>
 #include <memory>
@@ -16,7 +17,70 @@ template<class T> BindingRequest input(const std::vector<T>& data,DType type,std
   std::array<Offset,3> strides{};Offset stride=1;for(Index i=spec.rank;i-->0;){strides[i]=stride;stride*=spec.shape[i];}
   return {{p,spec,strides},spec,owner};
 }
+void operationParity(){
+  constexpr int N=33;const auto path=std::string(getenv("FLIGHTMARE_PATH"))+"/flightlib/configs/quadrotor_env.yaml";
+  RuntimeConfig cfg;cfg.environments=3;cfg.slots=11;cfg.models=2;Simulation sim(cfg);
+  std::vector<Index> ids(N);std::vector<float> bounds(6*N),xs(25*N),time(N),payload(4*N);
+  std::vector<Mask> active(N,1);active.back()=0;
+  std::vector<std::unique_ptr<flightlib::Quadrotor>> cpu;
+  for(int n=0;n<N;++n){ids[n]=n%2;for(int c=0;c<6;++c)bounds[c*N+n]=c%2?100:-100;
+    if(n%2)cpu.emplace_back(std::make_unique<flightlib::Quadrotor>(path));
+    else cpu.emplace_back(std::make_unique<flightlib::Quadrotor>(flightlib::QuadrotorDynamics(1,.25)));
+    flightlib::QuadState x;x.setZero();x.p.z()=5;x.w<<.1f,-.2f,.3f;x.v<<.2f,.4f,.6f;
+    x.a<<1,2,3;x.tau<<.01f,-.02f,.03f;cpu[n]->reset(x);
+    for(int c=0;c<25;++c)xs[c*N+n]=x.x[c];
+    payload[n]=9.81f;payload[N+n]=.12f;payload[2*N+n]=-.13f;payload[3*N+n]=.14f;
+  }
+  configure(sim,{ModelConfig{},loadModel(path)},ids,active,bounds,0);
+  upload(sim.buffer("state.x"),xs);
+  auto command=bindCommandInput(sim,input(active,DType::UInt8,{N}),
+    input(std::vector<CommandMode>(N,CommandMode::CollectiveBodyRates),DType::UInt8,{N}),
+    input(time,DType::Float32,{N}),input(payload,DType::Float32,{4,N}));setCommand(sim,command);
+  for(auto op:{CoreOperation::Derivative,CoreOperation::Controller,CoreOperation::Motors,
+               CoreOperation::OmegaToThrust,CoreOperation::ThrustToOmega,CoreOperation::ClampThrust,
+               CoreOperation::ClampMotorOmega,CoreOperation::ClampBodyRates,CoreOperation::ConstrainWorld}){
+    bool state_op=op==CoreOperation::Derivative||op==CoreOperation::ConstrainWorld;
+    int nr=state_op?25:(op==CoreOperation::Controller||op==CoreOperation::ClampBodyRates?3:4);
+    int no=state_op?25:op==CoreOperation::Motors?8:op==CoreOperation::ClampBodyRates?3:4;
+    std::vector<float> values(nr*N),expected(no*N,-99);
+    for(int n=0;n<N;++n){auto& d=cpu[n]->getDynamics();
+      for(int c=0;c<nr;++c)values[c*N+n]=state_op?xs[c*N+n]:
+        op==CoreOperation::OmegaToThrust||op==CoreOperation::ClampMotorOmega?float(100+c*1000):
+        op==CoreOperation::ClampThrust||op==CoreOperation::ClampBodyRates?float(-10+c*20):float(2+c*.2);
+      if(!active[n])continue;
+      flightlib::Vector<4> vec;for(int c=0;c<4;++c)vec[c]=c<nr?values[c*N+n]:0;
+      if(op==CoreOperation::ConstrainWorld){flightlib::QuadState old,x;cpu[n]->getState(&old);x=old;x.p<<101,-101,101;cpu[n]->setState(x);
+        for(int c=0;c<25;++c)xs[c*N+n]=x.x[c];CHECK(cpu[n]->constrainInWorldBox(old));cpu[n]->getState(&x);
+        for(int c=0;c<25;++c)expected[c*N+n]=x.x[c];}
+      else if(op==CoreOperation::Derivative){flightlib::QuadState x,dx;cpu[n]->getState(&x);CHECK(d.dState(x,&dx));for(int c=0;c<25;++c)expected[c*N+n]=dx.x[c];}
+      else if(op==CoreOperation::ClampBodyRates){auto out=d.clampBodyrates(vec.head<3>());for(int c=0;c<3;++c)expected[c*N+n]=out[c];}
+      else if(op==CoreOperation::Motors){cpu[n]->runMotors(.006125f,vec);flightlib::Vector<4>w,f;cpu[n]->getMotorOmega(w);cpu[n]->getMotorThrusts(f);
+        for(int c=0;c<4;++c){expected[c*N+n]=w[c];expected[(c+4)*N+n]=f[c];}}
+      else {flightlib::Vector<4> out;
+        if(op==CoreOperation::Controller)out=cpu[n]->runFlightCtl(.006125f,vec.head<3>(),flightlib::Command(0,9.81f,flightlib::Vector<3>(.12f,-.13f,.14f)));
+        if(op==CoreOperation::OmegaToThrust)out=d.motorOmegaToThrust(vec);
+        if(op==CoreOperation::ThrustToOmega)out=d.motorThrustToOmega(vec);
+        if(op==CoreOperation::ClampThrust)out=d.clampThrust(vec);
+        if(op==CoreOperation::ClampMotorOmega)out=d.clampMotorOmega(vec);
+        for(int c=0;c<4;++c)expected[c*N+n]=out[c];}
+    }
+    auto in=input(values,DType::Float32,{Offset(nr),N}),out=input(std::vector<float>(no*N,-99),DType::Float32,{Offset(no),N});
+    if(op==CoreOperation::ConstrainWorld)upload(sim.buffer("state.x"),xs);
+    auto b=bindOperation(sim,op,in,out);evaluateOperation(sim,op,b,.006125f);sim.synchronize();
+    auto actual=download(static_cast<float*>(out.tensor.data),no*N);
+    for(int c=0;c<no;++c)for(int n=0;n<N;++n){float tol=(op==CoreOperation::ThrustToOmega||op==CoreOperation::Motors&&c<4)?.002f:1e-5f*std::max(1.f,std::abs(expected[c*N+n]));
+      CHECK(std::isfinite(actual[c*N+n])&&std::abs(actual[c*N+n]-expected[c*N+n])<=tol);}
+    CHECK(download(sim.views().diagnostics.status.data,N).back()==LaneStatus::Inactive);
+    // Invalid input cannot overwrite the previous output (or motor state).
+    auto motors=download(sim.views().state.motor_omega.data,4*N);values[0]=NAN;upload(in.tensor.data,values);
+    evaluateOperation(sim,op,b,.006125f);sim.synchronize();auto rejected=download(static_cast<float*>(out.tensor.data),no*N);
+    CHECK(download(sim.views().diagnostics.status.data,N)[0]==LaneStatus::InvalidState);
+    for(int c=0;c<no;++c)CHECK(rejected[c*N]==actual[c*N]);
+    for(int c=0;c<4;++c)CHECK(download(sim.views().state.motor_omega.data,4*N)[c*N]==motors[c*N]);
+  }
+}
 int main(){try{
+  operationParity();
   const auto path=std::string(getenv("FLIGHTMARE_PATH"))+"/flightlib/configs/quadrotor_env.yaml";
   auto configured=loadModel(path);ModelConfig normal;
   auto table=prepareModels({normal,configured});

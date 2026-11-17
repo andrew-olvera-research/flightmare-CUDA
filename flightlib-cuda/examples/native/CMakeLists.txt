@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.24)
+project(flightlib_cuda_consumer LANGUAGES CXX)
+find_package(flightlib_cuda 0.1 CONFIG REQUIRED)
+add_executable(core_consumer main.cpp)
+target_link_libraries(core_consumer PRIVATE flightlib_cuda::runtime)

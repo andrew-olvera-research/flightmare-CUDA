@@ -5,7 +5,9 @@ project(flightlib_cuda VERSION ${FLIGHTMARE_VERSION} LANGUAGES CXX)
 add_library(flightlib_cuda_contracts INTERFACE)
 add_library(flightlib_cuda::contracts ALIAS flightlib_cuda_contracts)
 target_include_directories(flightlib_cuda_contracts INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+set_target_properties(flightlib_cuda_contracts PROPERTIES EXPORT_NAME contracts)
 target_compile_features(flightlib_cuda_contracts INTERFACE cxx_std_17)
 
 include(CTest)
@@ -18,15 +20,30 @@ if(FLIGHTLIB_CUDA_BUILD_RUNTIME OR FLIGHTLIB_CUDA_TEST_DEVICE)
   find_package(CUDAToolkit 13.0 REQUIRED)
   find_package(Eigen3 REQUIRED)
   find_package(yaml-cpp REQUIRED)
-  add_library(flightlib_cuda_runtime STATIC src/runtime.cu src/model.cpp src/lifecycle.cu src/dynamics.cu src/environment.cu)
+  add_library(flightlib_cuda_runtime STATIC src/runtime.cu src/model.cpp src/lifecycle.cu src/dynamics.cu src/operations.cu src/environment.cu)
+  set_source_files_properties(src/operations.cu PROPERTIES COMPILE_OPTIONS "--fmad=false")
   set_source_files_properties(src/dynamics.cu PROPERTIES COMPILE_OPTIONS "--fmad=false;-Xptxas=-v")
   set_source_files_properties(src/environment.cu PROPERTIES COMPILE_OPTIONS "--fmad=false;-Xptxas=-v;--expt-relaxed-constexpr")
   add_library(flightlib_cuda::runtime ALIAS flightlib_cuda_runtime)
   target_link_libraries(flightlib_cuda_runtime PUBLIC flightlib_cuda::contracts CUDA::cudart
     PRIVATE CUDA::cuda_driver Eigen3::Eigen yaml-cpp::yaml-cpp)
   set_target_properties(flightlib_cuda_runtime PROPERTIES
-    CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON)
+    CUDA_STANDARD 17 CUDA_STANDARD_REQUIRED ON POSITION_INDEPENDENT_CODE ON EXPORT_NAME runtime)
 endif()
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+install(TARGETS flightlib_cuda_contracts EXPORT flightlib_cudaTargets)
+if(TARGET flightlib_cuda_runtime)
+  install(TARGETS flightlib_cuda_runtime EXPORT flightlib_cudaTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+install(DIRECTORY include/flightlib_cuda DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT flightlib_cudaTargets NAMESPACE flightlib_cuda:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/flightlib_cuda)
+configure_package_config_file(cmake/flightlib_cudaConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/flightlib_cudaConfig.cmake INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/flightlib_cuda)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/flightlib_cudaConfigVersion.cmake
+  VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/flightlib_cudaConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/flightlib_cudaConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/flightlib_cuda)
 option(FLIGHTLIB_CUDA_BUILD_PYTHON "Build Torch interoperability module (no libtorch link)" OFF)
 if(FLIGHTLIB_CUDA_BUILD_PYTHON)
   if(NOT TARGET flightlib_cuda_runtime)

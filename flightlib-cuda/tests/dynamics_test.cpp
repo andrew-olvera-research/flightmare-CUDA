@@ -4,6 +4,7 @@
 #include <memory>
 #include <algorithm>
 #include <random>
+#include <iomanip>
 using namespace flightlib_cuda::v1;
 #define CHECK(x) do { if(!(x)) throw std::runtime_error("line "+std::to_string(__LINE__)+": " #x); } while(false)
 #define CUDA(x) CHECK((x)==cudaSuccess)
@@ -119,7 +120,12 @@ int main(int argc,char** argv){try{
     for(int i=0;i<steps;++i)for(auto& q:cpu)CHECK(q->run(.01f));
     double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
     if(sample)std::cout<<',';std::cout<<ms*1000/steps;
-    }std::cout<<"]}\n";return 0;
+    }std::cout<<"],"<<std::setprecision(9);
+    flightlib::QuadState x;CHECK(cpu[0]->getState(&x));flightlib::Vector<4> w,f;cpu[0]->getMotorOmega(w);cpu[0]->getMotorThrusts(f);
+    std::cout<<"\"state\":[";for(int c=0;c<25;++c){if(c)std::cout<<',';std::cout<<x.x[c];}
+    std::cout<<"],\"time\":"<<x.t<<",\"motor_omega\":[";for(int c=0;c<4;++c){if(c)std::cout<<',';std::cout<<w[c];}
+    std::cout<<"],\"motor_thrust\":[";for(int c=0;c<4;++c){if(c)std::cout<<',';std::cout<<f[c];}
+    std::cout<<"]}\n";return 0;
   }
   randomizedModels();
   constexpr int N=33;
@@ -143,6 +149,7 @@ int main(int argc,char** argv){try{
     sim.synchronize();upload(sim.buffer("state.x"),xs);
     auto modeinput=input(std::vector<CommandMode>(N),DType::UInt8,{N});auto pay=input(payload,DType::Float32,{4,N});
     auto commands=bindCommandInput(sim,selection,modeinput,input(times,DType::Float32,{N}),pay);
+    auto graph=captureRun(sim,commands);
     for(int step=0;step<300;++step){
       for(int n=0;n<N;++n){bool rates=n%2; modes[n]=rates?CommandMode::CollectiveBodyRates:CommandMode::RotorThrust;
         float sign=step%60<30?1:-1;
@@ -151,7 +158,10 @@ int main(int argc,char** argv){try{
         for(int c=0;c<4;++c)payload[c*N+n]=rates?(c?command.omega[c-1]:command.collective_thrust):command.thrusts[c];
         if(active[n])CHECK(cpu[n]->run(command,dt));
       }
-      sim.synchronize();upload(modeinput.tensor.data,modes);upload(pay.tensor.data,payload);setCommand(sim,commands);stepDynamics(sim);sim.synchronize();
+      sim.synchronize();upload(modeinput.tensor.data,modes);upload(pay.tensor.data,payload);
+      if(step%3==0){setCommand(sim,commands);stepDynamics(sim);}
+      else if(step%3==1)runDynamics(sim,commands);else sim.replay(graph);
+      sim.synchronize();
       auto actual=download(sim.views().state.x.data,25*N),t=download(sim.views().state.time.data,N);
       auto omega=download(sim.views().state.motor_omega.data,4*N),thrust=download(sim.views().state.motor_thrust.data,4*N);
       auto status=download(sim.views().diagnostics.status.data,N);
@@ -168,6 +178,13 @@ int main(int argc,char** argv){try{
     upload(sim.buffer("commands.mode"),modes);stepDynamics(sim);sim.synchronize();
     auto after=download(sim.views().state.x.data,25*N);auto status=download(sim.views().diagnostics.status.data,N);
     CHECK(status[0]==LaneStatus::InvalidCommand);for(int c=0;c<25;++c)CHECK(after[c*N]==before[c*N]);
+    // run(command, dt) rejects transactionally even when an old command exists.
+    upload(modeinput.tensor.data,modes);before=after;
+    auto accepted=modes;accepted[0]=CommandMode::RotorThrust;upload(sim.buffer("commands.mode"),accepted);
+    flightlib::Command rejected;CHECK(!cpu[0]->run(rejected,dt));
+    runDynamics(sim,commands);sim.synchronize();after=download(sim.views().state.x.data,25*N);
+    CHECK(download(sim.views().diagnostics.status.data,N)[0]==LaneStatus::InvalidCommand);
+    for(int c=0;c<25;++c)CHECK(after[c*N]==before[c*N]);
     modes[0]=CommandMode::RotorThrust;upload(sim.buffer("commands.mode"),modes);
     before=after;before[1]=NAN;before[10*N+2]=1e30f;upload(sim.buffer("state.x"),before);
     stepDynamics(sim);sim.synchronize();status=download(sim.views().diagnostics.status.data,N);

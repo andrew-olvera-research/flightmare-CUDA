@@ -41,4 +41,8 @@ Bindings bindCommandInput(Simulation&, BindingRequest selected, BindingRequest m
 void resetState(Simulation&, const Bindings&);
 void setState(Simulation&, const Bindings&);
 void setCommand(Simulation&, const Bindings&);
+// Framework bridges order producer -> simulation -> producer without host waits.
+void resetStateFrom(Simulation&, const Bindings&, cudaStream_t producer);
+void setStateFrom(Simulation&, const Bindings&, cudaStream_t producer);
+void setCommandFrom(Simulation&, const Bindings&, cudaStream_t producer);
 } // namespace flightlib_cuda::v1

@@ -155,6 +155,15 @@ def execute(profile, runner):
         runner.run('cuda-python-parity', [cuda_python, '-m', 'pytest', '-q',
                    'flightlib-cuda/python/tests', f'--junitxml={runner.directory / "cuda-python.xml"}'],
                    env=dict(os.environ, PYTHONPATH='/build/flightlib-cuda-python-native/python'))
+        # Install to a fresh destination so stale source/build imports cannot
+        # masquerade as a complete standalone package.
+        install = runner.directory / 'installed'
+        runner.run('core-install', ['cmake', '--install', '/build/flightlib-cuda-python-native', '--prefix', str(install)])
+        runner.run('installed-core-example', [cuda_python, str(ROOT/'flightlib-cuda/python/examples/core.py')],
+                   env=dict(os.environ, PYTHONPATH=str(install)))
+        runner.cmake('installed-native', 'flightlib-cuda/examples/native', str(runner.directory/'consumer'),
+                     [f'-DCMAKE_PREFIX_PATH={install}'])
+        runner.run('installed-native-consumer', [str(runner.directory/'consumer/core_consumer')])
         env = dict(os.environ, PYTHONPATH='/build/flightmare-parity-tests/flightlib')
         runner.run('binding', [sys.executable, '-m', 'pytest', '-q',
                                'docker/smoke/test_flightgym.py',

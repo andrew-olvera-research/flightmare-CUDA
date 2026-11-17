@@ -30,7 +30,7 @@ collision. Exact Unity collider fidelity requires its scene/prefab implementatio
 | Issue | Deliverable | Gate |
 | --- | --- | --- |
 | [CUDA-7](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/7) | State fidelity audit implemented | [Support matrix and numerical contract](flightlib-support.md), Eigen allocation fix, extended differential gates; [validation evidence](cuda7-validation.md) |
-| [CUDA-8](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/8) | Resident core API and standalone package | Supported reset/setState/setCommand/step and state/model/motor access usable without task Environment; explicit lifetime/stream/snapshot rules and non-RL example |
+| [CUDA-8](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/8) | Resident core API and package implemented | [Core API/public-method checklist](core-api.md): lifecycle, stepping, optional CPU helpers, model/motor/state views, explicit streams/snapshots; installed Python/C++ consumers |
 | [CUDA-9](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/9) | Integrated qualification and release readiness | Differential verification, clean build/install, matched parallel CPU/GPU performance and documented limitations |
 
 Order: completed CUDA-6 -> CUDA-7 -> CUDA-8 -> CUDA-9. CUDA-8 implements only

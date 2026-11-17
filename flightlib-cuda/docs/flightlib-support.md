@@ -5,6 +5,12 @@ in [flightlib-scope.md](flightlib-scope.md). It preserves the Flightmare equatio
 it does not certify sim-to-real transfer, new physics, or every legacy class.
 The frozen Flightlib source and oracle hash manifest remain unchanged.
 
+CUDA-8 completion: the API gaps recorded in this checkpoint are now exposed by
+the [resident Core API and complete public-method checklist](core-api.md),
+including optional low-level helpers and external size/collision metadata.
+The numerical and randomization boundaries below remain authoritative. The
+table's CUDA-8 references describe the original audit handoff, not current gaps.
+
 ## Operation matrix
 
 | CPU source / operation | CUDA support | Evidence / remaining boundary |
@@ -95,10 +101,10 @@ own measured qualification before claiming equivalent training behavior.
 
 ## Remaining layers
 
-CUDA-8 exposes supported native lifecycle/dynamics operations as a standalone
-resident core package, with model/motor/state access and explicit stream/ownership
-rules. It must not imply that the existing Python task API is already a complete
-core interface. CUDA-9 qualifies clean installation and the integrated release,
+CUDA-8 now exposes native lifecycle/dynamics operations as a standalone resident
+core package, with model/motor/state access, optional helpers and explicit
+stream/ownership rules; the separate Core interface does not depend on the task
+API. CUDA-9 qualifies clean installation and the integrated release,
 including matched best-tested parallel CPU performance. Geometry, collision
 solvers, rendering, sensors, RL wrappers and additional physical models remain
 deferred. See [CUDA-7 validation evidence](cuda7-validation.md).

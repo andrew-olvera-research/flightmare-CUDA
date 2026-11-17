@@ -123,6 +123,12 @@ Eigen packet arithmetic differences that compiler strict-FP flags do not remove.
 It adds no timing assertion to routine verification. See the
 [support matrix and numerical budgets](../flightlib-cuda/docs/flightlib-support.md).
 
+CUDA-8 adds optional CPU-helper differentials and public Python Core trajectory
+tests. `verify` also installs the artifacts into a fresh prefix, runs the non-RL
+Python example using the installed module, and builds/runs an independent native
+consumer using the exported CMake targets. These are package boundary checks,
+not a second simulator implementation. Core profiling remains a separate command.
+
 ## Oracle integrity
 
 `scripts/oracle-baseline.json` records normalized hashes of Flightlib source,

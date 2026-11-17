@@ -9,6 +9,7 @@ import random
 import sqlite3
 import statistics
 import subprocess
+import struct
 import sys
 
 
@@ -33,15 +34,33 @@ def fingerprint(repo):
     return digest.hexdigest()
 
 
-PYTHON_WORKLOADS = {'python', 'python-graph', 'policy', 'policy-graph'}
+CORE_WORKLOADS = {'core', 'core-graph', 'core-run', 'core-run-graph'}
+PYTHON_WORKLOADS = {'python', 'python-graph', 'policy', 'policy-graph', 'helpers', *CORE_WORKLOADS}
 
 
 def kernel_nodes(workload):
+    if workload == 'helpers': return 9
+    if workload in CORE_WORKLOADS:
+        return 2 if '-run' in workload else 1
     return 3 if workload in PYTHON_WORKLOADS or workload == 'environment-graph' else launches(workload)
 
 
 def launches(workload):
     return {'dispatch': 0, 'environment-graph': 0, 'mixed': 3, 'environment': 3, 'environment-split': 4, 'environment-random': 3}.get(workload, 1)
+
+
+def validate_core_telemetry(gpu, cpu):
+    """CUDA-7 numerical budgets; no angle-equivalence or relaxed time check."""
+    if not math.isfinite(cpu['time']) or gpu['time'] != struct.unpack('f', struct.pack('f', cpu['time']))[0]:
+        raise ValueError('Core CPU/GPU clock mismatch')
+    for key, count in (('state', 25), ('motor_omega', 4), ('motor_thrust', 4)):
+        if len(gpu[key]) != count or len(cpu[key]) != count:
+            raise ValueError('Incomplete core telemetry')
+        for i, (a, b) in enumerate(zip(gpu[key], cpu[key])):
+            tol = .02 if key == 'motor_omega' else 1e-4
+            if key == 'state': tol = (3e-4 if i < 16 else 1e-4)*max(1, abs(b))
+            if not math.isfinite(a) or not math.isfinite(b) or abs(a-b) > tol:
+                raise ValueError(f'Core CPU/GPU {key}[{i}] mismatch: {a} versus {b}')
 
 
 def performance_gate(report, baseline, limit):
@@ -65,6 +84,10 @@ def performance_gate(report, baseline, limit):
             raise ValueError('Performance baseline Torch version mismatch')
         if c['native'].get('policy_workload_version') != old[key(c)]['native'].get('policy_workload_version'):
             raise ValueError('Performance baseline policy workload mismatch')
+        if c['native'].get('core_workload_version') != old[key(c)]['native'].get('core_workload_version'):
+            raise ValueError('Performance baseline core workload mismatch')
+        if c['native'].get('helper_workload_version') != old[key(c)]['native'].get('helper_workload_version'):
+            raise ValueError('Performance baseline helper workload mismatch')
         prior = old[key(c)]['timing']['wall_us_per_iteration']['median']
         if not math.isfinite(prior) or prior <= 0:
             raise ValueError('Invalid baseline wall timing')
@@ -171,10 +194,10 @@ def markdown(report):
     cpu = [c for c in report['cases'] if 'cpu_baseline' in c]
     if cpu:
         lines += ['', 'Sequential O3 strict-FP CPU comparison (same interval counts; no task/policy):', '',
-                  '| Lanes | CPU us/interval | CPU / GPU wall |', '| ---: | ---: | ---: |']
+                  '| Lanes | Workload | CPU us/interval | CPU / GPU wall |', '| ---: | --- | ---: | ---: |']
         for c in sorted(cpu, key=lambda c: c['environments']*c['slots']):
             b = c['cpu_baseline']
-            lines.append(f'| {c["environments"]*c["slots"]} | {b["median_us"]:.3f} | {b["sequential_cpu_over_gpu_wall"]:.2f}x |')
+            lines.append(f'| {c["environments"]*c["slots"]} | {c["workload"]} | {b["median_us"]:.3f} | {b["sequential_cpu_over_gpu_wall"]:.2f}x |')
     for c in report['cases']:
         if 'compute' in c:
             lines += ['', f'Nsight Compute {c["environments"]}x{c["slots"]}: {c["compute"]["status"]}; see compute logs.']
@@ -262,7 +285,8 @@ def main():
                 extension = next((args.python_build_dir / 'python/flightlib_cuda').glob('_native*.so'))
                 report['python_extension_sha256'] = hashlib.sha256(extension.read_bytes()).hexdigest()
             def probe(e, a, iterations, samples, workload, trace):
-                prefix = [args.python_interpreter, repo / 'flightmare-profile/flightmare_profile/python_driver.py'] if workload in PYTHON_WORKLOADS else [binary]
+                driver = 'operations_driver.py' if workload == 'helpers' else 'core_driver.py' if workload in CORE_WORKLOADS else 'python_driver.py'
+                prefix = [args.python_interpreter, repo / ('flightmare-profile/flightmare_profile/' + driver)] if workload in PYTHON_WORKLOADS else [binary]
                 return [*prefix, e, a, iterations, samples, args.warmup, workload, args.active_percent, trace, args.control_dt, args.reset_percent]
             jobs = [(e, a, w) for e, a in cases for w in args.workloads.split(',')]
             random.Random(0).shuffle(jobs)
@@ -275,11 +299,15 @@ def main():
                 summary = summarize(result, args.iterations, args.samples, workload)
                 item = {'environments': e, 'slots': a, 'workload': workload, 'native': result, **summary}
                 report['cases'].append(item)
-                if args.cpu_baseline and workload == 'dynamics':
+                if args.cpu_baseline and workload in {'dynamics', *CORE_WORKLOADS}:
                     if args.active_percent != 100:
                         raise ValueError('CPU comparison requires all lanes active')
-                    cpu_samples = json.loads(run([args.build_dir / 'cpu_baseline', e*a, args.iterations, args.warmup, args.samples], repo,
-                        directory / f'{name}-cpu.json'))['samples_us']
+                    cpu_result = json.loads(run([args.build_dir / 'cpu_baseline', e*a, args.iterations, args.warmup, args.samples], repo,
+                        directory / f'{name}-cpu.json'))
+                    cpu_samples = cpu_result['samples_us']
+                    if workload in CORE_WORKLOADS:
+                        validate_core_telemetry(result['telemetry'], cpu_result)
+                        item['cpu_behavior_validated'] = True
                     item['cpu_baseline'] = {'samples_us': cpu_samples, 'median_us': statistics.median(cpu_samples),
                         'sequential_cpu_over_gpu_wall': statistics.median(cpu_samples) / summary['timing']['wall_us_per_iteration']['median'],
                         'scope': 'Sequential O3 strict-FP CPU (frozen source, separate build); identical initial state, constant rotor commands, dt=.01, warmup and interval counts. No policy/task. Not an optimized parallel CPU comparison.'}
@@ -303,7 +331,7 @@ def main():
                     expected = min(args.iterations, 256) * kernel_nodes(workload)
                     observed = item['trace']['kernel_count']
                     if workload in PYTHON_WORKLOADS:
-                        observed = sum(k['count'] for k in item['trace']['kernels'] if any(n in k['name'] for n in ('prepareActions', 'dynamicsKernel', 'taskKernel')))
+                        observed = sum(k['count'] for k in item['trace']['kernels'] if any(n in k['name'] for n in ('prepareActions', 'dynamicsKernel', 'taskKernel', 'commandKernel', 'operationKernel')))
                         forbidden_api = [a for a in item['trace']['api'] if a['name'].startswith(('cudaMalloc', 'cudaFree', 'cudaMemcpy', 'cudaDeviceSynchronize', 'cudaStreamSynchronize'))]
                         syncs = sum(a['count'] for a in item['trace']['api'] if a['name'].startswith('cudaEventSynchronize'))
                         if forbidden_api or syncs != 1:

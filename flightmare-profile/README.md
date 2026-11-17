@@ -197,6 +197,27 @@ A failed/interrupted report is not performance evidence. See
 
 ## Invariants and extension points
 
+CUDA-8 core probes use the installed-style production Python API without tasks:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads core,core-graph,core-run,core-run-graph --cases 1x1,3x11,1024x16,4096x16 --iterations 100 --samples 5 --warmup 10 --trace-all
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads core,core-run-graph --cases 1x1,3x11,1024x1 --iterations 100 --samples 5 --warmup 10 --cpu-baseline
+```
+
+`core` steps accepted commands (one kernel); `core-run` accepts commands and steps
+(two kernels). Graph variants retain those kernel-node counts. The CPU comparison
+checks all 25 final state fields, motors and exact float clock, following full
+native CPU differential preflight; it is sequential optimized CPU, not a parallel
+speedup claim. All active GPU lanes are checked for equal telemetry. Workloads
+use dt=.01, initial z=5/time=2, force=3 per rotor and no automatic reset; reset
+percent must be zero. Snapshots occur after measurement. Metadata/input storage
+is accounted separately from arena bytes. Trace gates include command kernels.
+
+`--workloads helpers --cases 1x1,1024x16 --iterations 100 --samples 5 --warmup 10
+--trace-all` measures the nine explicitly invoked low-level operations separately
+from fused stepping. Its budget is nine kernel launches per iteration, with no
+hot-loop transfers/allocations. It is not a recommended nine-stage sim loop.
+
 The harness fails on functional result mismatch, wrong launch counts, hot-loop
 application copies/allocations/frees/host synchronizations, trace errors, or a
 changed source fingerprint during the run. Python untraced runs enforce allocator
