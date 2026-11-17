@@ -784,6 +784,23 @@ standalone Python/C++ consumers. The profiler measures core accepted-command and
 command-plus-step paths, each with/without graphs, stable storage, CPU telemetry
 comparison and separate launch/transfer traces. See [CUDA-8 evidence](cuda8-validation.md).
 
+## CUDA-9 planned usage layer
+
+The final [usage/RL plan](cuda9-usage-plan.md) supersedes the earlier wrapper
+deferral. A separate `flightrl_cuda` package will compose the existing Environment
+with tensor vector APIs, device episode accounting and resident rollout history.
+It adds an explicit NumPy compatibility boundary and a train/evaluate example.
+Core equations and frozen arena contracts remain the source of truth; no second
+simulator or per-agent CPU ownership is introduced. Missing execution controls
+and setup bindings must be validated against actual legacy task behavior.
+
+Qualification covers wrapper-visible parity, configuration/resource lookup,
+terminal-versus-reset observations, stream/lifetime safety, installed user flows
+and policy/rollout systems metrics. Release means a validated reproducible
+checkpoint; a tag or publication is a separate action. Rendering, sensors and
+scene collision engines remain deferred. This section is a plan, not completion
+evidence or an alteration of the existing v1 tensors.
+
 ## Legacy source anchors
 
 - [State indices](../../flightlib/include/flightlib/common/quad_state.hpp)

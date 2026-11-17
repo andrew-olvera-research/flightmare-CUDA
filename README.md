@@ -43,9 +43,11 @@ its [performance evidence](flightlib-cuda/docs/cuda6-performance.md) measures ac
 Python stepping and a small GPU policy loop, including remaining overhead.
 The [parallel CPU comparison](flightlib-cuda/docs/cpu-parallel-performance.md)
 sweeps OpenMP and multiprocessing against matched GPU environment stepping.
-The [remaining scope](flightlib-cuda/docs/flightlib-scope.md) is core state parity,
-resident API completion and package qualification. Collision geometry, the RL
-wrapper and the rendering overhaul are deferred to later extensions.
+CUDA-8 completes the [resident core API](flightlib-cuda/docs/core-api.md).
+The final [CUDA-9 plan](flightlib-cuda/docs/cuda9-usage-plan.md) covers headless
+usage wrappers, resident RL rollouts, a training/evaluation example and package
+qualification. These additions are planned, not yet implemented. Collision
+geometry, rendering and all sensors remain later extensions.
 
 The dev container uses NVIDIA's CUDA **13.3.1** development image on Ubuntu 24.04,
 pinned by digest. It includes CMake, Ninja, GCC, Python 3, NumPy, pytest, and

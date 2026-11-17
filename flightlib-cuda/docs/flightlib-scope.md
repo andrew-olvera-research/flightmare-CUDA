@@ -10,8 +10,10 @@ The reference is Flightlib's state/control/model behavior: preparation and
 updates, command acceptance, both command modes, resets versus state setters,
 Flightmare equations and operation ordering, all 25 state fields, motors, clocks,
 world-box constraints and diagnostics. Preserve legacy quirks. Keep existing
-task/observation/reward/reset coverage and Python Environment integration as
-compatibility consumers; do not expand the RL wrapper or training API now.
+task/observation/reward/reset coverage and Python Environment integration.
+CUDA-9 now extends the final scope to headless usage and RL wrappers, resident
+rollout collection and a train/evaluate example; see the
+[CUDA-9 usage plan](cuda9-usage-plan.md). This supersedes the earlier RL deferral.
 
 Behavioral fidelity to this reference is separate from adding physical fidelity.
 No new aerodynamics, collision response or replacement physics engine is implied.
@@ -31,7 +33,7 @@ collision. Exact Unity collider fidelity requires its scene/prefab implementatio
 | --- | --- | --- |
 | [CUDA-7](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/7) | State fidelity audit implemented | [Support matrix and numerical contract](flightlib-support.md), Eigen allocation fix, extended differential gates; [validation evidence](cuda7-validation.md) |
 | [CUDA-8](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/8) | Resident core API and package implemented | [Core API/public-method checklist](core-api.md): lifecycle, stepping, optional CPU helpers, model/motor/state views, explicit streams/snapshots; installed Python/C++ consumers |
-| [CUDA-9](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/9) | Integrated qualification and release readiness | Differential verification, clean build/install, matched parallel CPU/GPU performance and documented limitations |
+| [CUDA-9](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/9) | Final headless usage and RL package, then qualification (planned) | Resident tensor wrapper, explicit host adapter, configuration/method audit, train-save-load-evaluate example, wrapper parity/residency, clean install and matched performance |
 
 Order: completed CUDA-6 -> CUDA-7 -> CUDA-8 -> CUDA-9. CUDA-8 implements only
 actual supported gaps identified by CUDA-7, rather than speculating about a new
@@ -60,8 +62,9 @@ require rebuilding the simulator.
   [collision plan](cuda7-collision-plan.md) is retained as a historical design
   resource, not a current implementation instruction or Unity-equivalence claim.
 - Rendering overhaul, scene fidelity and sensors, including timing/state exchange.
-- RL wrapper, vector-environment adapters, rollout/training tooling, shared swarm
-  rewards/termination and expanded policy integration.
+- Shared swarm rewards/termination, distributed learning, a general RL algorithm
+  library and automatic legacy TensorFlow checkpoint conversion. Headless
+  wrappers and the bounded training/evaluation example are now in CUDA-9.
 - ROS/PX4/SITL, new platforms and additional physical fidelity.
 
 Frozen geometry declarations remain reserved; their presence does not require
