@@ -7,7 +7,9 @@ The v1 data contracts are frozen. CUDA-2 provides persistent device storage,
 validated external bindings, and ordered asynchronous launches. CUDA-3 adds
 model/YAML preparation and state lifecycle. CUDA-4 provides fused dynamics,
 CUDA-5 adds environment/task/episode behavior, and CUDA-6 adds resident PyTorch
-integration and explicit graph execution. Geometry remains pending.
+integration and explicit graph execution. Geometry is deferred to a future
+extension; [remaining work](docs/flightlib-scope.md) closes core parity/API gaps
+and qualifies the standalone accelerated package.
 
 - [Architecture, tensor shapes, kernel boundaries, and risks](docs/architecture.md)
 - [C++17 and CUDA compatible data contracts](include/flightlib_cuda/contracts.hpp)

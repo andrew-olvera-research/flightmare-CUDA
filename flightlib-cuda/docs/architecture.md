@@ -7,16 +7,19 @@ ordering, and ownership. CUDA-3 adds model preparation and low-level state and
 command lifecycle operations. CUDA-4 adds fused dynamics. CUDA-5 adds native
 environment stepping, task outputs and episode resets. CUDA-6 adds resident
 PyTorch bindings, explicit graph replay and GPU policy stream handoffs.
-Geometry remains a subsequent layer.
+Geometry is deferred to a separate future extension.
 
 Post-CUDA-6 review: the [parallel CPU baseline](cpu-parallel-performance.md)
-supports retaining the resident/fused architecture. Per user clarification,
-the next layer prioritizes collision state and overlap queries; rendering and
-sensing are separate. The [collision-first CUDA-7 plan](cuda7-collision-plan.md)
-proposes pulling proxy/overlap semantics and a minimal validated collision path
-forward from CUDA-8. Frozen ray contracts remain available for optional future
-implementation; they do not determine the current backend choice. The historical
-sequence below is superseded by that planning note where it prioritizes rays.
+supports retaining the resident/fused architecture. The current milestone is
+reproduction of the scoped Flightlib core, not new geometry or an RL framework.
+The [current scope and remaining layers](flightlib-scope.md) supersede the earlier
+[collision-first proposal](cuda7-collision-plan.md) and the historical geometry
+implementation sequence below. CUDA-7 completes state/numerical parity; CUDA-8
+completes the resident core API/package; CUDA-9 qualifies that package. Rendering,
+sensor/scene fidelity, collision detection and the RL wrapper are later work.
+Frozen geometry declarations remain reserved future interfaces, not current
+implementation requirements. Existing task and Python Environment APIs remain
+supported without expanding their RL scope.
 
 The authoritative declarations are
 [contracts.hpp](../include/flightlib_cuda/contracts.hpp). This document defines
@@ -35,16 +38,14 @@ platform dynamics are separate extensions, not implicit functionality in v1.
 
 ```mermaid
 flowchart TD
-  Config[CPU configuration and asset preparation] --> Model[Immutable GPU model and topology]
+  Config[CPU configuration] --> Model[GPU model and topology]
   Config --> Arena[Persistent GPU state and output buffers]
   Policy[GPU policy actions] --> Dynamics[Fused Flightmare CUDA dynamics]
   Model --> Dynamics
   Arena --> Dynamics
   Dynamics --> Task[Observation reward terminal evaluation]
-  Dynamics --> Geometry[Instance transforms and GPU geometry queries]
   Task --> Reset[Masked task reset and returned observation]
   Reset --> Policy
-  Geometry --> Results[Device query results]
   Arena -. explicit snapshot .-> Debug[CPU diagnostics or legacy bridge]
 ```
 
@@ -346,7 +347,10 @@ spills, and total VRAM. Set numerical tolerances per field and trajectory length
 preserve discrete validity, clamp, terminal, and reset semantics. No claimed
 speedup is justified by this contract-only implementation.
 
-## Implementation sequence
+## Historical implementation sequence
+
+Geometry steps in this initial sequence are deferred. The authoritative remaining
+sequence is [CUDA-7 -> CUDA-8 -> CUDA-9](flightlib-scope.md).
 
 1. Implement allocation and binding validation against these shapes, initialize
    every buffer, and expose borrowed device views with ownership/stream rules.

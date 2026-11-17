@@ -1,5 +1,11 @@
 # CUDA-7 collision-first geometry qualification and design
 
+**Deferred historical proposal.** This document is retained for the later
+scene/fidelity extension and is not the current CUDA-7 scope. The CPU Flightlib
+bridge receives Unity collision results; it supplies no equivalent geometry
+oracle to reproduce here. See [the current scope](flightlib-scope.md). References
+below to CUDA-7/8 describe the superseded proposal, not current issue assignments.
+
 User clarification: current scope is collision queries and state. Rendering and
 sensing are separate. Rays are optional line-intersection queries, not the primary
 CUDA-7 deliverable. Revise the existing CUDA-7/8 chronology accordingly.

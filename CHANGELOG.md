@@ -30,3 +30,6 @@ version does not imply complete integrated Flightmare parity.
 - Post-CUDA-6: matched optimized CPU OpenMP/multiprocessing versus GPU environment
   benchmark, worker-affinity safeguards, behavior gates and collision-first
   CUDA-7 planning. No simulation equations or frozen tensor contracts changed.
+- Scope correction: CUDA-7/8/9 now cover Flightlib state fidelity, resident core
+  API/package completion and qualification. Collision geometry, rendering/sensors
+  and the RL wrapper are deferred; the earlier collision-first plan is historical.
