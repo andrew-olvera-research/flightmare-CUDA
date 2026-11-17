@@ -248,6 +248,7 @@ def main():
             binary = args.build_dir / 'profile_driver'
             if args.cpu_baseline:
                 run(['env', f'FLIGHTMARE_PATH={repo}', args.build_dir / 'cpu_baseline'], repo, directory / 'cpu-optimized-parity.log')
+                run(['env', f'FLIGHTMARE_PATH={repo}', args.build_dir / 'cpu_environment_parity'], repo, directory / 'cpu-optimized-environment-parity.log')
                 report['cpu_binary_sha256'] = hashlib.sha256((args.build_dir / 'cpu_baseline').read_bytes()).hexdigest()
             report['binary_sha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
             python_work = bool(set(args.workloads.split(',')) & PYTHON_WORKLOADS)

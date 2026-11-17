@@ -176,7 +176,8 @@ docker compose exec -T -e OMP_PROC_BIND=spread -e OMP_PLACES=cores -e OPENBLAS_N
 ```
 
 Requires `scripts/setup-cuda-python.sh`. Builds are requested under the common
-local build lock. The benchmark runs optimized dynamics parity and a one-lane
+local build lock. The benchmark runs optimized dynamics and environment parity
+(including randomized models and saturated symmetric Euler/reward cases), then a one-lane
 matched-output preflight before the sweep. Each case also checks output/reset
 agreement. `--modes thread` selects only OpenMP; `--actions=-1` selects reset
 stress, and `--control-dt .02` matches the original environment timestep.

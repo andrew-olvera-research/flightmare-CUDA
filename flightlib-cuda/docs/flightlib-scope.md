@@ -29,7 +29,7 @@ collision. Exact Unity collider fidelity requires its scene/prefab implementatio
 
 | Issue | Deliverable | Gate |
 | --- | --- | --- |
-| [CUDA-7](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/7) | State fidelity and numerical parity completion | Source-anchored support matrix, demonstrated gap fixes and disposition of optimized-CPU Euler-branch/reward discrepancy |
+| [CUDA-7](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/7) | State fidelity audit implemented | [Support matrix and numerical contract](flightlib-support.md), Eigen allocation fix, extended differential gates; [validation evidence](cuda7-validation.md) |
 | [CUDA-8](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/8) | Resident core API and standalone package | Supported reset/setState/setCommand/step and state/model/motor access usable without task Environment; explicit lifetime/stream/snapshot rules and non-RL example |
 | [CUDA-9](https://github.com/andrew-olvera-research/flightmare-CUDA/issues/9) | Integrated qualification and release readiness | Differential verification, clean build/install, matched parallel CPU/GPU performance and documented limitations |
 
@@ -40,10 +40,11 @@ of CPU-style per-drone objects. Any external collision flag passthrough must be
 distinguished from computed collision detection and retain contract discipline.
 
 The parallel benchmark exposed a numerical branch discrepancy for symmetric
-commands under an optimized CPU build. CUDA-7 must reproduce and investigate it
-against frozen CPU, optimized CPU and CUDA; reward differences cannot be accepted
-merely because Euler angles describe an equivalent orientation. Do not silently
-relax tolerances or rewrite the oracle to produce a passing result.
+commands. CUDA-7 reproduced it against both frozen and optimized CPU, fixed the
+allocation evaluation ordering and added a reward/observation regression. The
+support matrix records the remaining CPU SIMD approximation boundary and the
+separate long-rollout drift budget. Angle equivalence does not excuse reward
+differences; the original oracle and its tolerances remain unchanged.
 
 CUDA-9 keeps performance evidence honest: matched work/hardware/configuration,
 best tested OpenMP/multiprocessing configuration, per-step completion versus

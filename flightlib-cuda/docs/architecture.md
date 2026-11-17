@@ -739,6 +739,24 @@ kernel-node counts are distinct invariants. Nsight uses node-level graph tracing
 See [CUDA-6 performance evidence](cuda6-performance.md) for residency proof,
 scaling, the CUDA-5 regression gate and remaining end-to-end policy overhead.
 
+## CUDA-7 state fidelity audit
+
+The [operation/support matrix](flightlib-support.md) now records source anchors,
+native support, standalone API gaps for CUDA-8 and deferred scene/sensor work.
+CUDA-7 fixes the symmetric YAML Euler/reward discrepancy through explicit Eigen
+packet-product FMA ordering and correct host inertia rounding. It adds randomized
+model trajectories, live updates and longer-step coverage without changing frozen
+tensor shapes, allocation, launch topology or the original numerical gates.
+The new long randomized rollout has a separately documented acceleration budget;
+CPU SIMD square-root approximation prevents general bitwise trajectory identity.
+
+Local verify and CPU benchmark preflight now run differential dynamics and task
+fixtures against the strict optimized CPU build as well as the frozen reference.
+The saturated symmetry regression compares actual rewards, not angle-equivalent
+orientations. [Validation/performance evidence](cuda7-validation.md) records the
+qualified workload envelope and remaining limits. No higher-fidelity physics,
+collision backend or new RL interface is introduced in this layer.
+
 ## Legacy source anchors
 
 - [State indices](../../flightlib/include/flightlib/common/quad_state.hpp)

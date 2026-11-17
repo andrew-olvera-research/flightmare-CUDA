@@ -138,6 +138,14 @@ def execute(profile, runner):
         runner.run('lifecycle-parity', ['ctest', '--test-dir', '/build/flightlib-cuda-contracts',
                    '-R', '^flightlib_cuda.(lifecycle|dynamics|environment)_parity$', '--no-tests=error',
                    '--output-on-failure', '--output-junit', str(runner.directory / 'lifecycle.xml')])
+        # Eigen packet intrinsics can differ from scalar math even with strict
+        # FP flags. Qualify the actual optimized CPU comparison, including rewards.
+        runner.cmake('optimized-cpu', 'flightmare-profile/native', '/build/flightmare-profile',
+                     ['-DPROFILE_CPU_BASELINE=ON', *cuda_options],
+                     targets=['cpu_baseline', 'cpu_environment_parity'])
+        for name in ('cpu_baseline', 'cpu_environment_parity'):
+            runner.run(name, [f'/build/flightmare-profile/{name}'],
+                       env=dict(os.environ, FLIGHTMARE_PATH=str(ROOT)))
         cuda_python = '/build/flightlib-cuda-python/bin/python'
         if not Path(cuda_python).exists():
             raise RuntimeError('Run docker compose exec -T dev bash scripts/setup-cuda-python.sh first')

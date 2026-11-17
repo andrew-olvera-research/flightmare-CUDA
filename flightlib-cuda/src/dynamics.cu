@@ -50,9 +50,10 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
         ft[c+1]=j[c]*m.rate_gain(c,p)*(command[c+1]-x[10+c])+
           (x[10+a]*j[b]*x[10+b]-x[10+b]*j[a]*x[10+a]);}
       #pragma unroll
-      for(int r=0;r<4;++r){float v=0;
+      // Same packet-product ordering as the forward allocation below.
+      for(int r=0;r<4;++r){float v=m.inverse_allocation(r*4,p)*ft[0];
         #pragma unroll
-        for(int c=0;c<4;++c)v+=m.inverse_allocation(r*4+c,p)*ft[c];
+        for(int c=1;c<4;++c)v=fmaf(m.inverse_allocation(r*4+c,p),ft[c],v);
         desired[r]=clamp(v,m.thrust_bounds(0,p),m.thrust_bounds(1,p));}
     }
     float a=m.thrust_polynomial(0,p),b=m.thrust_polynomial(1,p),c=m.thrust_polynomial(2,p);
@@ -64,13 +65,17 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
       if(!isfinite(target)){status(n)=LaneStatus::NumericalFailure;return;}
       target=clamp(target,m.motor_speed_bounds(0,p),m.motor_speed_bounds(1,p));
       omega[r]=decay*omega[r]+(1.0f-decay)*target;
-      thrust[r]=clamp(omega[r]*omega[r]*a+omega[r]*b+c,m.thrust_bounds(0,p),m.thrust_bounds(1,p));
+      // Eigen's 4x3 polynomial product uses a packet multiply then pmadd.
+      thrust[r]=clamp(fmaf(omega[r],b,omega[r]*omega[r]*a)+c,m.thrust_bounds(0,p),m.thrust_bounds(1,p));
     }
     float ft[4];
     #pragma unroll
-    for(int r=0;r<4;++r){ft[r]=0;
+    // Eigen's fixed-size column-major packet product starts with a multiply,
+    // then uses explicit pmadd intrinsics even with host contraction disabled.
+    // Match that ordering: cancellation sign matters to legacy Euler rewards.
+    for(int r=0;r<4;++r){ft[r]=m.allocation(r*4,p)*thrust[0];
       #pragma unroll
-      for(int c=0;c<4;++c)ft[r]+=m.allocation(r*4+c,p)*thrust[c];}
+      for(int c=1;c<4;++c)ft[r]=fmaf(m.allocation(r*4+c,p),thrust[c],ft[r]);}
     // Eigen quaternion-vector transform also supports non-unit input without normalization.
     float tx=2*x[5]*ft[0],ty=-2*x[4]*ft[0];
     x[13]=(x[3]*tx-x[6]*ty)/m.mass(p)+m.gravity(0,p);

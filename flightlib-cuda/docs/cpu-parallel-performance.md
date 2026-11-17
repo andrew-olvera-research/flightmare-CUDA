@@ -91,10 +91,13 @@ parity suites. Constant actions, one model, independent lanes and two reset
 patterns are measured; diverse policies and geometry are not.
 
 A rejected exploratory symmetric-action case exposed legacy Euler branch
-sensitivity: tiny O3 CPU attitude differences selected a pi/pi/pi observation
+sensitivity: tiny CPU attitude differences selected a pi/pi/pi observation
 instead of zero and changed reward. That mismatch was not accepted or hidden by
-an angle-equivalence tolerance. Asymmetric commands avoid this degenerate fixture;
-this remains a numerical portability limitation to investigate separately.
+an angle-equivalence tolerance. CUDA-7 subsequently reproduced it against both
+frozen and optimized CPU, identified Eigen packet FMA accumulation, fixed the
+CUDA ordering and added a saturated symmetry regression. See the
+[numerical contract](flightlib-support.md) for its disposition and remaining
+cross-platform approximation limits. The historical table above is unchanged.
 An interrupted affinity-contaminated run was also rejected. Only the successful
 report above supports the table.
 

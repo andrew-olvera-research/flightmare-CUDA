@@ -35,7 +35,9 @@ ModelTable prepareModels(const std::vector<ModelConfig>& configs) {
     for(auto v:{c.mass,c.arm_length,c.motor_min,c.motor_max,c.motor_tau,c.kappa})
       if(!std::isfinite(v)) throw std::invalid_argument("nonfinite model parameter");
     for(auto v:c.rate_limit) if(!(v>0) || !std::isfinite(v)) throw std::invalid_argument("invalid rate limit");
-    Eigen::Vector3f j=c.mass/12.0f*c.arm_length*c.arm_length*Eigen::Vector3f(4.5f,4.5f,7);
+    // Flightlib computes the scalar factor in double before the Eigen float
+    // multiplication. Keep its rounding boundary for randomized models too.
+    Eigen::Vector3f j=c.mass/12.0*c.arm_length*c.arm_length*Eigen::Vector3f(4.5f,4.5f,7);
     Eigen::Matrix3f inertia=j.asDiagonal();
     Eigen::Matrix3f inverse=inertia.inverse();
     const Scalar arm=c.arm_length*std::sqrt(0.5);

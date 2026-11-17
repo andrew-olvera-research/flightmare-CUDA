@@ -79,7 +79,7 @@ if(BUILD_TESTING)
       add_executable(dynamics_test tests/dynamics_test.cpp)
       target_include_directories(dynamics_test PRIVATE ../flightlib/include ${OpenCV_INCLUDE_DIRS})
       target_compile_definitions(dynamics_test PRIVATE EIGEN_STACK_ALLOCATION_LIMIT=1048576)
-      target_compile_options(dynamics_test PRIVATE -march=native)
+      target_compile_options(dynamics_test PRIVATE -march=native -ffp-contract=off)
       target_link_libraries(dynamics_test PRIVATE flightlib_cuda::runtime
         "${FLIGHTLIB_CUDA_ORACLE_LIBRARY}" Eigen3::Eigen yaml-cpp::yaml-cpp
         OpenMP::OpenMP_CXX ${OpenCV_LIBRARIES} zmq zmqpp stdc++fs)

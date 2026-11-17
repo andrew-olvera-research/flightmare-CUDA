@@ -117,6 +117,12 @@ validation also requires `--trace`; allocator deltas alone are insufficient.
 Add query workloads when implemented. Review threshold changes. Do not put noisy timing assertions or a
 speculative benchmark matrix in routine checks.
 
+CUDA-7 adds strict optimized CPU dynamics and environment differential runs to
+`verify`, using the benchmark's unchanged Flightlib source build. This detects
+Eigen packet arithmetic differences that compiler strict-FP flags do not remove.
+It adds no timing assertion to routine verification. See the
+[support matrix and numerical budgets](../flightlib-cuda/docs/flightlib-support.md).
+
 ## Oracle integrity
 
 `scripts/oracle-baseline.json` records normalized hashes of Flightlib source,

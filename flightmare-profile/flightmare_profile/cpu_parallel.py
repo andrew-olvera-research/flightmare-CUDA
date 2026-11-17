@@ -222,6 +222,9 @@ def main():
                  '-DPROFILE_CPU_BASELINE=ON','-DCMAKE_CUDA_ARCHITECTURES='+os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES','120-real')],repo,directory/'configure.log')
             run(['cmake','--build',build,'--parallel','4'],repo,directory/'build.log')
             run([build/'cpu_baseline'],repo,directory/'optimized-parity.log',env=dict(os.environ,FLIGHTMARE_PATH=str(repo)))
+            run([build/'cpu_environment_parity'],repo,directory/'optimized-environment-parity.log',env=dict(os.environ,FLIGHTMARE_PATH=str(repo)))
+            report['optimized_parity'] = {'dynamics': True, 'environment': True,
+                'scope': 'Full differential fixtures, including saturated symmetric Euler/reward regression and randomized model rollouts'}
             library=build/'libcpu_environment.so'
             report['cpu_sha256']=hashlib.sha256(library.read_bytes()).hexdigest()
             report['preflight']=[]

@@ -17,6 +17,8 @@ and qualifies the standalone accelerated package.
 - [Model setup and state lifecycle API](include/flightlib_cuda/lifecycle.hpp)
 - [Resident Python API, installation and stream ownership](python/README.md)
 - [CUDA-6 performance and validation evidence](docs/cuda6-performance.md)
+- [CUDA-7 core support and numerical fidelity contract](docs/flightlib-support.md)
+- [CUDA-7 validation and performance evidence](docs/cuda7-validation.md)
 
 Run host and device contract checks inside the existing dev container:
 

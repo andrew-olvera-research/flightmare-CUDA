@@ -33,3 +33,7 @@ version does not imply complete integrated Flightmare parity.
 - Scope correction: CUDA-7/8/9 now cover Flightlib state fidelity, resident core
   API/package completion and qualification. Collision geometry, rendering/sensors
   and the RL wrapper are deferred; the earlier collision-first plan is historical.
+- [CUDA-7] Source-anchored core support matrix, targeted Eigen packet arithmetic
+  parity fixes, saturated YAML Euler/reward regression, randomized model/update
+  trajectories, explicit numerical budgets, and optimized CPU differential gates
+  in local verification and profiling. Frozen oracle and tensor contracts unchanged.

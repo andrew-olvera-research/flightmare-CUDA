@@ -33,7 +33,7 @@ struct Fixture {
   }
   void syncInputs(){sim.synchronize();upload(ai.tensor.data,action);upload(si.tensor.data,selected);upload(xi.tensor.data,state);upload(ti.tensor.data,time);}
 };
-void scalarEnv(){
+void scalarEnv(bool saturated=false){
   auto path=std::string(getenv("FLIGHTMARE_PATH"))+"/flightlib/configs/quadrotor_env.yaml";
   flightlib::QuadrotorEnv cpu(path);auto yaml=YAML::LoadFile(path);yaml["quadrotor_env"]["max_t"]=.001f;CHECK(cpu.loadParam(yaml));
   float dt=cpu.getSimTimeStep();Fixture f(1,1,dt);auto model=loadModel(path);
@@ -41,6 +41,9 @@ void scalarEnv(){
   flightlib::Vector<12> obs;cpu.reset(obs,false);resetEnvironment(f.sim,f.inputs);
   int episodes=1,steps=0;float clock=0;
   for(int i=0;i<120;++i){flightlib::Vector<4> act;act<<1.f,1.f,1.f,1.f;if(i>40)act<<-.8f,-.2f,.5f,.1f;if(i==10)act<<3.f,-2.f,1.5f,.1f;
+    // Saturation + exact symmetry exposes cancellation-sign changes in the
+    // allocation product: equivalent Euler orientations can change the reward.
+    if(saturated)act.setConstant(3.f);
     for(int c=0;c<4;++c)f.action[c]=act[c];f.syncInputs();
     float reward=cpu.step(act,obs),extra=0;bool done=cpu.isTerminalState(extra);auto transition=obs.eval();
     reward+=extra;++steps;clock+=dt;if(done){cpu.reset(obs,false);++episodes;steps=0;clock=0;}
@@ -171,4 +174,4 @@ void rngAndBranches(){
   a.syncInputs();resetEnvironment(a.sim,a.inputs);a.sim.synchronize();auto obs=download(a.sim.views().task_output.observation.data,12*N);
   for(int n=0;n<N;++n){Eigen::Quaternionf q(a.state[3*N+n],a.state[4*N+n],a.state[5*N+n],a.state[6*N+n]);auto e=q.toRotationMatrix().eulerAngles(2,1,0);for(int k=0;k<3;++k)near(obs[12*n+3+k],e[k],2e-6f);}
 }
-int main(){try{scalarEnv();mixedLanes();rngAndBranches();randomObservationParity();failureIsolation();graphParity();std::cout<<"Environment parity and lifecycle passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{scalarEnv();scalarEnv(true);mixedLanes();rngAndBranches();randomObservationParity();failureIsolation();graphParity();std::cout<<"Environment parity and lifecycle passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
