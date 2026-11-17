@@ -36,13 +36,24 @@ docker compose exec -T dev python3 scripts/local_ci.py verify
 | release | verify plus clean committed tree and unused tag requirement | Before release tagging |
 | legacy | Original headless upstream suite | Upstream/dependency changes |
 | doctor | Compiler/GPU information and CUDA installation smoke | Container/driver/toolkit changes |
-| sanitize | fast plus Compute Sanitizer memcheck | Device-memory changes when host tooling supports it |
+| sanitize | Instrumentation preflight, verify, then memcheck/racecheck/initcheck/synccheck across native and selected RL workloads | Device-memory and synchronization changes |
+| ubsan | Host undefined-behavior instrumentation of the CUDA runtime's host code and native tests, including CPU differentials | Host alignment, lifetime and arithmetic audits |
 
 Every profile checks oracle integrity and records source/toolchain/device identity.
 Only verify/release are full normal gates. The WSL/WDDM host currently cannot
 initialize the sanitizer debugger interface; sanitize fails rather than skips.
-Add applicable racecheck/synccheck workloads as kernels arrive and host support
-becomes available. Do not make unavailable tooling a silently passing gate.
+The sanitizer matrix covers runtime, guarded arena, lifecycle, dynamics and task
+tests, plus RL GAE boundaries, nondefault streams and training/checkpoint tests.
+Racecheck primarily checks shared-memory hazards; it does not prove global-memory
+or cross-stream race freedom. Initcheck does not prove every tensor element was
+semantically initialized. Do not make unavailable tooling a silently passing gate.
+
+`ubsan` uses a separate `/build/flightlib-cuda-ubsan` tree, retains alignment checks,
+and stops on the first diagnostic. It instruments host code, not GPU instructions
+or the separately built frozen oracle library. AddressSanitizer currently prevents
+CUDA driver initialization on this host, reproduced with a standalone device-count
+program. No ASan suppression is used to claim a passing GPU suite.
+See the [systematic audit and findings](../flightlib-cuda/docs/repository-audit.md).
 
 `docker/check.sh` delegates to verify. Existing focused check scripts and CTest
 filters remain debugging tools, not full validation evidence. Do not run them
@@ -79,6 +90,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | CPU parity suite | verify: rejection, clamps, motors, integration, bounds, rewards, reset routing |
 | Host contract test | fast: multi-slot indexing, 64-bit offsets, overflow rejection, const reads |
 | GPU runtime test | fast: device storage/indexing, binding rejection, stream/lifetime safety, no-copy/allocation launch checks; supersedes standalone device contract test |
+| Guarded arena test | fast: detect cross-field writes at warp/block tails, lifecycle/helpers/reset/graph workloads, both E/A groupings; includes a deliberately corrupted guard negative control |
 | GPU dynamics differential test | verify: complete trajectories/motors against frozen CPU, multiple models/modes/schedules, bounds and lane failure isolation |
 | GPU environment differential test | verify: scalar task parity, mixed-lane transitions/reset isolation, Euler branches, command clocks, counters and lane-stable RNG |
 | Python smoke | verify: native loading, binding layouts, actual state advancement |

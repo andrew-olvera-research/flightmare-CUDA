@@ -85,3 +85,30 @@ def test_invalid_gradient_limit_rejected_before_update():
     with pytest.raises(ValueError): ppo_update(p,opt,h,max_grad_norm=-1)
     assert not opt.state and all(torch.equal(a,b) for a,b in zip(before,p.parameters()))
     env.close()
+
+
+@pytest.mark.parametrize('name', ['rl_stats', 'rl_gae'])
+def test_rl_launch_dimensions_reject_before_native_submission(name):
+    from flightrl_cuda.kernels import BoundKernel
+    if name == 'rl_stats':
+        types = (torch.float32,torch.uint8,torch.uint8,torch.float32,torch.int64,torch.float32,torch.int64)
+        shapes = [(3,)] * 7
+        bad = [(4,True), (2**32+3,True), (0,True), (-1,True), (3.0,True), ()]
+        good = (1,True)  # lane-zero test_step is explicitly supported
+    else:
+        types = (torch.float32,torch.float32,torch.uint8,torch.uint8,torch.float32,torch.float32,torch.float32)
+        shapes = [(2,3)]*4+[(3,)]+[(2,3)]*2
+        bad = [(4,2,.99,.95), (2,2,.99,.95), (3,3,.99,.95),
+               (3,2**32+2,.99,.95), (3,2,float('nan'),.95), ()]
+        good = (3,2,.99,.95)
+    tensors = [torch.zeros(s,dtype=t,device='cuda') for s,t in zip(shapes,types)]
+    kernel = BoundKernel(name,tensors,types,shapes)
+    # Never launch deliberately invalid pointers/extents, even on the unfixed
+    # implementation. The negative control asserts rejection before FFI entry.
+    calls = []
+    kernel.fn = lambda *args: calls.append(args) or 0
+    for args in bad:
+        with pytest.raises(ValueError,match='launch dimensions'): kernel.run(*args)
+    assert calls == []
+    kernel.run(*good)
+    assert len(calls) == 1

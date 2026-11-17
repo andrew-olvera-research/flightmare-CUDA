@@ -811,6 +811,22 @@ The public README and clean release qualification remain deferred to the next
 turn. No tag/publication is performed. Rendering, sensors and scene collision
 engines remain out of scope.
 
+## Repository audit after v0.1.2
+
+The [systematic audit](repository-audit.md) adds a diagnostic-only arena layout:
+`RuntimeConfig.debug_guards=true` reserves gaps around every nonempty field.
+Tensor shapes, component order and production layout are unchanged. Guard
+initialization/checking belongs to the test harness, never the stepping path.
+Canaries catch cross-field writes inside the single allocation; device sanitizers
+remain necessary for invalid reads, uninitialized memory and synchronization.
+
+All component offsets and launch ceilings use 64-bit intermediates. Host model
+preparation uses a distinct unaligned Eigen allocation-matrix type to avoid linking
+incompatible inline alignment assumptions from the CPU oracle. RL bound kernels
+validate scalar launch dimensions against their schemas before entering the C ABI;
+GAE requires the exact bound row stride and horizon, while statistics permits the
+explicit lane-zero prefix. These checks add no GPU transfers or synchronization.
+
 ## Legacy source anchors
 
 - [State indices](../../flightlib/include/flightlib/common/quad_state.hpp)

@@ -50,6 +50,9 @@ struct RuntimeConfig {
   int device{0};
   std::uint64_t seed{0};
   Offset memory_budget_bytes{0}; // 0 = no user cap; free memory still checked.
+  // Diagnostic layout only: reserve gaps around every field for test canaries.
+  // No checks or extra launches on the production path. Shapes are unchanged.
+  bool debug_guards{false};
 };
 
 struct RuntimeViews {

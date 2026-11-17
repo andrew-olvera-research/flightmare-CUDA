@@ -41,9 +41,14 @@ ModelTable prepareModels(const std::vector<ModelConfig>& configs) {
     Eigen::Matrix3f inertia=j.asDiagonal();
     Eigen::Matrix3f inverse=inertia.inverse();
     const Scalar arm=c.arm_length*std::sqrt(0.5);
-    Eigen::Matrix4f allocation;
+    // This library may share a process with an oracle/consumer built using
+    // different Eigen SIMD flags. Keep this private type distinct from its
+    // aligned Matrix4f: weak inline inverse symbols must not coalesce across
+    // incompatible stack-alignment assumptions (SSE vs AVX-512).
+    using AllocationMatrix = Eigen::Matrix<float,4,4,Eigen::DontAlign>;
+    AllocationMatrix allocation;
     allocation << 1,1,1,1, arm,-arm,-arm,arm, -arm,-arm,arm,arm,c.kappa,-c.kappa,c.kappa,-c.kappa;
-    Eigen::Matrix4f inv=allocation.inverse();
+    AllocationMatrix inv=allocation.inverse();
     put("mass",0,p,1,c.mass); put("motor_tau_inverse",0,p,1,1.0f/c.motor_tau);
     put("motor_speed_bounds",0,p,2,c.motor_min);put("motor_speed_bounds",1,p,2,c.motor_max);
     // updateParams never refreshes the constructor's cached thrust cap.
@@ -82,7 +87,7 @@ TypedCommand adaptCommand(const LegacyCommand& c) {
 }
 void configure(Simulation& sim,const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
                const std::vector<Mask>& active,const std::vector<Scalar>& bounds,Scalar dt,Scalar max_dt) {
-  const auto& v=sim.views();const auto n=v.topology.batch.lanes;
+  const auto& v=sim.views();const Offset n=v.topology.batch.lanes;
   if(models.size()!=v.models.mass.size()||ids.size()!=n||active.size()!=n||bounds.size()!=6ULL*n)
     throw std::invalid_argument("configuration shape mismatch");
   for(Index i=0;i<n;++i) {

@@ -2,6 +2,9 @@
 
 ## 0.1.2 — usage and training hardening
 
+- Systematic audit: fix 32-bit component-offset overflow, Eigen model-preparation
+  alignment mismatch and unchecked RL launch dimensions. Add guarded arena
+  boundary tests, a host UBSan profile and the full device sanitizer matrix.
 - Reject invalid/nonfinite PPO inputs before optimizer mutation and reject
   nonfinite losses/gradients or invalid gradient limits.
 - Make accepted configuration/autoreset properties read-only; require explicit

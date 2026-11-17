@@ -173,19 +173,22 @@ def test_scalar_task_has_no_vector_terminal_bonus():
     single.close(); vector.close()
 
 
-def test_gae_terminal_horizon_invalid_and_history():
-    env = TensorEnv(Config(num_envs=3), random_reset=False)
+@pytest.mark.parametrize('n', [3, 127, 128, 129])
+def test_gae_terminal_horizon_invalid_and_history(n):
+    env = TensorEnv(Config(num_envs=n), random_reset=False)
     policy = ActorCritic().cuda()
     history = Rollout(3, env, policy)
     # Independent arithmetic fixture: terminal excludes V(next), horizon includes it.
-    history.reward.copy_(torch.tensor([[1., 2., 8.], [3., 4., 9.], [5., 6., 10.]], device='cuda'))
+    lane = torch.arange(n,device='cuda') % 3
+    fixture = torch.tensor([[1., 2., 8.], [3., 4., 9.], [5., 6., 10.]], device='cuda')
+    history.reward.copy_(fixture[:,lane])
     history.value.fill_(.5); history.done.zero_(); history.valid.fill_(1)
-    history.done[1, 0] = 1; history.valid[1, 2] = 0
+    history.done[1, lane==0] = 1; history.valid[1, lane==2] = 0
     history.last_value.fill_(2)
     history.finish(gamma=1., lam=1.)
-    torch.testing.assert_close(history.returns[:, 0], torch.tensor([4., 3., 7.], device='cuda'))
-    torch.testing.assert_close(history.returns[:, 1], torch.tensor([14., 12., 8.], device='cuda'))
-    assert history.advantage[1, 2] == 0
+    expected = torch.tensor([[4.,14.,8.], [3.,12.,.5], [7.,8.,12.]], device='cuda')
+    torch.testing.assert_close(history.returns, expected[:,lane])
+    assert (history.advantage[1, lane==2] == 0).all()
     # An invalid next transition cannot leak an arbitrary value through GAE.
     assert history.returns[0, 2] == 8
     env.reset(); history.collect()

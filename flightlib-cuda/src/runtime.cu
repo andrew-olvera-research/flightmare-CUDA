@@ -58,14 +58,14 @@ template <typename T> constexpr DType dtype() {
 }
 template <typename T>
 void append(AllocationPlan& plan, const char* name, const char* category,
-            std::initializer_list<Offset> dimensions) {
+            std::initializer_list<Offset> dimensions, bool debug_guards) {
   TensorSpec spec{dtype<T>(), static_cast<Index>(dimensions.size()), {}};
   std::copy(dimensions.begin(), dimensions.end(), spec.shape.begin());
   const auto count = bytes(spec);
-  const auto offset = count ? (add(plan.arena_bytes, 255) & ~Offset{255}) : 0;
+  const auto offset = count ? (add(plan.arena_bytes, debug_guards ? 511 : 255) & ~Offset{255}) : 0;
   plan.buffers.push_back({name, category, spec, offset, count});
   plan.payload_bytes = add(plan.payload_bytes, count);
-  if (count) plan.arena_bytes = add(offset, count);
+  if (count) plan.arena_bytes = add(add(offset, count), debug_guards ? 256 : 0);
 }
 template <typename T, Index Rank>
 void assign(TensorView<T, Rank>& view, void* arena, const BufferInfo& buffer) {
@@ -82,7 +82,7 @@ __global__ void initialize(RuntimeViews v, std::uint64_t seed) {
   const Offset n = Offset{blockIdx.x} * blockDim.x + threadIdx.x;
   if (n < v.topology.batch.lanes) {
     v.state.x(3, n) = 1;
-    const_cast<Scalar*>(v.reset.x.data)[3 * v.topology.batch.lanes + n] = 1;
+    const_cast<Scalar*>(v.reset.x.data)[v.reset.x.offset(3, n)] = 1;
     v.diagnostics.status(n) = LaneStatus::Inactive;
     v.episodes.random_key(n) = seedKey(seed + n);
   }
@@ -158,7 +158,7 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset P = config.models, S = config.substeps, I = config.instances;
   const Offset Q = config.rays, K = config.candidates_per_environment;
   AllocationPlan result;
-#define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__});
+#define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);
 #include "buffers.def"
 #undef FLC_BUFFER
   if (config.memory_budget_bytes && result.arena_bytes > config.memory_budget_bytes)

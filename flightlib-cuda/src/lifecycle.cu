@@ -6,7 +6,8 @@
 namespace flightlib_cuda::v1 {
 namespace {
 __global__ void stateKernel(RuntimeViews v,const Mask* selected,const Scalar* x,const Scalar* time,bool reset) {
-  const Index n=blockIdx.x*blockDim.x+threadIdx.x, N=v.topology.batch.lanes;
+  const Index n=blockIdx.x*blockDim.x+threadIdx.x;
+  const Offset N=v.topology.batch.lanes;
   if(n>=N)return;
   if(!v.topology.active(n)) {v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   v.diagnostics.status(n)=LaneStatus::Ok;
@@ -19,7 +20,8 @@ __global__ void stateKernel(RuntimeViews v,const Mask* selected,const Scalar* x,
   if(reset)for(Index c=0;c<4;++c){v.state.motor_omega(c,n)=0;v.state.motor_thrust(c,n)=0;}
 }
 __global__ void commandKernel(RuntimeViews v,const Mask* selected,const CommandMode* mode,const Scalar* time,const Scalar* payload) {
-  const Index n=blockIdx.x*blockDim.x+threadIdx.x,N=v.topology.batch.lanes;
+  const Index n=blockIdx.x*blockDim.x+threadIdx.x;
+  const Offset N=v.topology.batch.lanes;
   if(n>=N)return;
   if(!v.topology.active(n)){v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   v.diagnostics.status(n)=LaneStatus::Ok;
@@ -50,7 +52,7 @@ void validate(const Bindings& b,std::initializer_list<TensorSpec> expected){
       throw std::invalid_argument("wrong lifecycle input schema");}
 }
 void stateLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* reset){
-  stateKernel<<<(v.topology.batch.lanes+127)/128,128,0,stream>>>(v,
+  stateKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,
     static_cast<const Mask*>(b[0].tensor.data),static_cast<const Scalar*>(b[1].tensor.data),
     static_cast<const Scalar*>(b[2].tensor.data),reset!=nullptr);
 }

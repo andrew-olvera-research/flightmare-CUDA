@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT = ['git', '-c', 'core.filemode=false', '-c', 'core.autocrlf=true']
-PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize')
+PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan')
 
 
 def capture(args, root=ROOT):
@@ -119,7 +119,7 @@ class Runner:
 def execute(profile, runner):
     arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', '120-real')
     cuda_options = [f'-DCMAKE_CUDA_ARCHITECTURES={arch}']
-    if profile in ('fast', 'verify', 'sanitize'):
+    if profile in ('fast', 'verify'):
         runner.run('harness', [sys.executable, '-m', 'unittest', 'discover',
                                '-s', 'scripts/tests', '-v'])
         runner.cmake('contracts', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
@@ -192,9 +192,41 @@ def execute(profile, runner):
         runner.cmake('smoke', 'docker/smoke', '/build/cuda-smoke', cuda_options)
         runner.ctest('smoke', '/build/cuda-smoke')
     elif profile == 'sanitize':
+        # Fail fast on unsupported instrumentation before the expensive suite.
+        # A normal executable pass is never a substitute for sanitizer success.
+        runner.cmake('sanitizer-probe', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
+                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON', *cuda_options],
+                     targets=['runtime_test'])
         runner.run('memcheck', ['compute-sanitizer', '--tool', 'memcheck',
                                '--error-exitcode', '1',
                                '/build/flightlib-cuda-contracts/runtime_test'])
+        execute('verify', runner)
+        targets = ('runtime_test', 'guarded_test', 'lifecycle_test', 'dynamics_test', 'environment_test')
+        env = dict(os.environ, FLIGHTMARE_PATH=str(ROOT),
+                   PYTHONPATH='/workspace/flightrl-cuda:/workspace/flightmare-profile:/build/flightlib-cuda-python-native/python')
+        for tool in ('memcheck', 'racecheck', 'initcheck', 'synccheck'):
+            prefix = ['compute-sanitizer', '--tool', tool, '--error-exitcode', '1']
+            for target in targets:
+                if tool == 'memcheck' and target == 'runtime_test': continue
+                runner.run(f'{tool}-{target}', prefix + [f'/build/flightlib-cuda-contracts/{target}'],
+                           env=env, timeout=900)
+            runner.run(f'{tool}-rl', prefix + ['/build/flightlib-cuda-python/bin/python', '-m', 'pytest', '-q',
+                       'flightrl-cuda/tests/test_rl.py', '-k',
+                       'gae_terminal or nondefault_stream or ppo_update_checkpoint'], env=env, timeout=900)
+    elif profile == 'ubsan':
+        runner.cmake('oracle', 'flightmare-parity-tests', '/build/flightmare-parity-tests',
+                     targets=['flightlib'])
+        runner.cmake('ubsan', 'flightlib-cuda', '/build/flightlib-cuda-ubsan', [
+            '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
+            '-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
+            '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/flightmare-parity-tests/flightlib/libflightlib.a',
+            '-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -fsanitize=undefined -fno-omit-frame-pointer',
+            '-DCMAKE_CUDA_FLAGS=-lineinfo -Xcompiler=-fsanitize=undefined -Xcompiler=-fno-omit-frame-pointer',
+            '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined', *cuda_options])
+        runner.run('ubsan-tests', ['ctest', '--test-dir', '/build/flightlib-cuda-ubsan',
+                   '--output-on-failure', '--no-tests=error', '--timeout', '120',
+                   '--output-junit', str(runner.directory / 'ubsan.xml')],
+                   env=dict(os.environ, UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1'))
 
 
 def main():
