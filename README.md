@@ -60,6 +60,26 @@ Gymnasium five-return Env or Stable Baselines VecEnv subclass.
 
 ## Tensor simulation
 
+For a custom trainer, use `flightrl_cuda.TensorEnv` for the stock task or
+`flightlib_cuda.Core` for dynamics with your own task. The installed
+[collector example](flightrl-cuda/flightrl_cuda/custom_collector.py) runs a
+plain PyTorch policy on a nondefault stream and saves observations on both sides
+of an autoreset. You own the network, history, optimizer and update schedule.
+After the persistent install above, run:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.custom_collector
+```
+
+The GPU PPO example and optimized CPU comparison are reference workloads.
+The [headless baseline](flightlib-cuda/docs/cuda10-headless-baseline.json)
+records native graph timings, copy/allocation counts and traces on the RTX 5070 Ti.
+Reproduce it from the repository root:
+
+```sh
+docker compose exec -T -e PYTHONPATH=/workspace/flightmare-profile dev python3 -m flightmare_profile --workloads environment-graph --cases 1x1,1x100,1x1000 --iterations 100 --samples 7 --warmup 20 --reset-percent 50 --trace-all --trace
+```
+
 ```python
 import torch
 from flightrl_cuda import Config, TensorEnv

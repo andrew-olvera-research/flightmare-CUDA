@@ -69,7 +69,7 @@ class Runner:
         self.root = root
         self.steps = []
 
-    def run(self, name, args, env=None, timeout=900):
+    def run(self, name, args, env=None, timeout=900, cwd=None):
         print(f'[{name}] {" ".join(map(str, args))}', flush=True)
         log = self.directory / f'{name}.log'
         step = {'name': name, 'command': list(map(str, args)), 'log': log.name}
@@ -77,7 +77,7 @@ class Runner:
         start = time.monotonic()
         try:
             with log.open('w') as stream:
-                process = subprocess.Popen(args, cwd=self.root, env=env,
+                process = subprocess.Popen(args, cwd=cwd or self.root, env=env,
                                            stdout=stream, stderr=subprocess.STDOUT,
                                            start_new_session=True)
                 try:
@@ -168,6 +168,16 @@ def execute(profile, runner):
         runner.run('rl-install', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation',
                                  '--target', str(install), str(ROOT/'flightrl-cuda')])
         checkpoint=runner.directory/'policy.pt'
+        # Detect accidental resolution through the editable source install.
+        consumer = (
+            'import os, runpy, flightlib_cuda, flightrl_cuda; from pathlib import Path; '
+            'root = Path(os.environ["PYTHONPATH"]).resolve(); '
+            'assert all(Path(m.__file__).resolve().is_relative_to(root) '
+            'for m in (flightlib_cuda, flightrl_cuda)); '
+            'runpy.run_module("flightrl_cuda.custom_collector", run_name="__main__")'
+        )
+        runner.run('installed-custom-collector', [cuda_python, '-c', consumer],
+                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
         runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',
