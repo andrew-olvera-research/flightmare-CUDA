@@ -14,15 +14,18 @@ def main():
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--checkpoint', default='policy.pt')
     parser.add_argument('--evaluate', action='store_true')
+    parser.add_argument('--action-mode', choices=('rotor', 'ctbr'), default='rotor')
     args = parser.parse_args()
     torch.manual_seed(args.seed)
-    config = Config(num_envs=args.envs, slots=args.slots, seed=args.seed)
+    config = Config(num_envs=args.envs, slots=args.slots, seed=args.seed, action_mode=args.action_mode)
     env = TensorEnv(config); env.reset(); env.capture()
     if args.evaluate:
         policy, _, data = load(args.checkpoint)
         # Evaluation must use the saved physics/task configuration.
         expected = config.metadata(); actual = data['config']
-        for key in ('model','control_dt','reward_coeff'):
+        actual = dict(actual, action_mode=actual.get('action_mode', 'rotor'),
+                      model={'rate_gain': Config().model.rate_gain, **actual['model']})
+        for key in ('model','control_dt','reward_coeff','action_mode'):
             if expected[key] != actual[key]: raise ValueError('evaluation configuration mismatch: '+key)
         history = Rollout(args.steps, env, policy); history.noise.zero_()
         history.collect(resample=False)

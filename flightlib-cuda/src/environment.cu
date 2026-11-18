@@ -102,9 +102,20 @@ __global__ void prepareActions(RuntimeViews v,Inputs in){
   if(!isfinite(v.state.time(n))){v.diagnostics.status(n)=LaneStatus::InvalidState;return;}
   #pragma unroll
   for(int c=0;c<25;++c)if(!isfinite(v.state.x(c,n))){v.diagnostics.status(n)=LaneStatus::InvalidState;return;}
-  #pragma unroll
-  for(int c=0;c<4;++c)v.commands.payload(c,n)=fminf(v.models.thrust_bounds(1,p),fmaxf(v.models.thrust_bounds(0,p),command[c]));
-  v.commands.mode(n)=CommandMode::RotorThrust;v.commands.time(n)=time;
+  const bool ctbr=v.task_parameters.ctbr(n)!=0;
+  if(ctbr){
+    // Specific thrust (m/s²) becomes total force inside the substep mixer.
+    v.commands.payload(0,n)=fminf(4.f*v.models.thrust_bounds(1,p)/v.models.mass(p),fmaxf(0.f,command[0]));
+    #pragma unroll
+    for(int axis=0;axis<3;++axis){
+      float limit=v.models.body_rate_limit(axis,p);
+      v.commands.payload(axis+1,n)=fminf(limit,fmaxf(-limit,command[axis+1]));
+    }
+  }else{
+    #pragma unroll
+    for(int c=0;c<4;++c)v.commands.payload(c,n)=fminf(v.models.thrust_bounds(1,p),fmaxf(v.models.thrust_bounds(0,p),command[c]));
+  }
+  v.commands.mode(n)=ctbr?CommandMode::CollectiveBodyRates:CommandMode::RotorThrust;v.commands.time(n)=time;
   v.episodes.command_time(n)=time;v.task_output.valid.data[n]=1;
 }
 using detail::StaticScene;
@@ -210,16 +221,19 @@ void seedEnvironment(Simulation& s,std::uint64_t seed){
 }
 void configureTask(Simulation& s,const std::vector<TaskConfig>& configs){
   Offset N=s.views().topology.batch.lanes;if(configs.size()!=1&&configs.size()!=N)throw std::invalid_argument("wrong task parameter count");
+  std::vector<Mask> ctbr(N);
   std::vector<float> mean(4*N),scale(4*N),goal(12*N),reward(5*N);
   for(Offset n=0;n<N;++n){auto& c=configs[configs.size()==1?0:n];
+    ctbr[n]=c.ctbr;
     for(int i=0;i<12;++i){if(!std::isfinite(c.goal[i]))throw std::invalid_argument("nonfinite task goal");goal[i*N+n]=c.goal[i];}
     for(int i=0;i<5;++i){if(!std::isfinite(c.reward_coeff[i]))throw std::invalid_argument("nonfinite task reward");reward[i*N+n]=c.reward_coeff[i];}
     for(int i=0;i<4;++i){if(!std::isfinite(c.action_mean[i])||!std::isfinite(c.action_scale[i]))throw std::invalid_argument("nonfinite task scaling");mean[i*N+n]=c.action_mean[i];scale[i*N+n]=c.action_scale[i];}}
-  struct Copy {void* dst;const float* src;size_t bytes;};std::array<Copy,4> copies{{
+  struct Copy {void* dst;const void* src;size_t bytes;};std::array<Copy,5> copies{{
+    {s.buffer("task_parameters.ctbr"),ctbr.data(),ctbr.size()*sizeof(Mask)},
     {s.buffer("task_parameters.action_mean"),mean.data(),mean.size()*4},{s.buffer("task_parameters.action_scale"),scale.data(),scale.size()*4},
     {s.buffer("task_parameters.goal"),goal.data(),goal.size()*4},{s.buffer("task_parameters.reward_coeff"),reward.data(),reward.size()*4}}};
   s.enqueueSetup([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
-    auto& copies=*static_cast<std::array<Copy,4>*>(ctx);try{
+    auto& copies=*static_cast<std::array<Copy,5>*>(ctx);try{
       for(auto c:copies)if(cudaMemcpyAsync(c.dst,c.src,c.bytes,cudaMemcpyHostToDevice,stream)!=cudaSuccess)throw std::runtime_error("task setup copy failed");
       if(cudaStreamSynchronize(stream)!=cudaSuccess)throw std::runtime_error("task setup completion failed");
     }catch(...){cudaStreamSynchronize(stream);throw;}

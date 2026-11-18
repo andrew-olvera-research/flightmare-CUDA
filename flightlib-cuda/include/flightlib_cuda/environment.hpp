@@ -6,6 +6,7 @@ struct TaskConfig {
   std::array<Scalar,4> action_scale{4.905f,4.905f,4.905f,4.905f};
   std::array<Scalar,12> goal{0,0,5,0,0,0,0,0,0,0,0,0};
   std::array<Scalar,5> reward_coeff{-.002f,-.002f,-.0002f,-.0002f,-.0002f};
+  bool ctbr{false};
 };
 TaskConfig legacyTaskConfig(Scalar mass);
 // Explicit synchronous setup. One configuration broadcasts; otherwise require N.

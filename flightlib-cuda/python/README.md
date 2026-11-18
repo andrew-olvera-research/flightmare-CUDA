@@ -123,3 +123,34 @@ export of task outputs and performs transfers; it is outside resident stepping.
 
 See [systems evidence](../docs/cuda6-performance.md) and the
 [profiling harness](../../flightmare-profile/README.md) for measured scope/limits.
+
+### Collective thrust and body rates (CTBR)
+
+Use the same resident four-channel action tensor for rotor forces or CTBR.
+Select CTBR at setup, before graph capture.
+
+```python
+from flightlib_cuda import Environment, ModelConfig, ctbr_task_config
+
+plant = ModelConfig()
+plant.rate_limit = [6., 6., 4.]       # body x/y/z, rad/s
+plant.rate_gain = [16.6, 16.6, 5.]   # proportional gains, 1/s
+env = Environment(128, models=[plant])
+env.configure_task(ctbr_task_config(plant))
+```
+
+For normalized actions, zero requests hover acceleration and zero angular
+rates. Collective -1 and +1 request 0 and 19.62 m/s². Each signed rate input
+is scaled by its axis limit. For physical inputs in m/s² and rad/s, set
+the task's action_mean to four zeros and action_scale to four ones before
+calling configure_task. Within each physics substep the controller measures
+body rate, computes torque using plant inertia and gyroscopic compensation,
+and mixes total force and torque through the plant's cached inverse allocation
+matrix. Each rotor saturates independently. No extra per-step launch is needed.
+
+For the RL wrapper set quadrotor_env.action_mode to ctbr in the task YAML.
+Tune quadrotor_dynamics.rate_gain per plant and omega_max for command limits.
+Start from hover, command one axis at a time, and inspect the measured rate
+(state rows 10–12), settling time and rotor saturation. Reduce the axis gain
+for overshoot or oscillation; increase it for sluggish unsaturated response.
+Use the same gains and action scaling when evaluating a trained policy.

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
 import yaml
-from flightlib_cuda import ModelConfig, legacy_task_config
+from flightlib_cuda import ModelConfig, legacy_task_config, ctbr_task_config
 
 
 def defaults():
@@ -15,6 +15,7 @@ def model_from(data):
                                motor_omega_max='motor_max', motor_tau='motor_tau',
                                thrust_map='thrust_map', kappa='kappa', omega_max='rate_limit').items():
         setattr(model, target, data[source])
+    if "rate_gain" in data: model.rate_gain = data["rate_gain"]
     return model
 
 
@@ -28,6 +29,8 @@ class Config:
     max_t: float = 5.0  # metadata, not a time-limit wrapper
     model: object = field(default_factory=lambda: model_from(defaults()['quadrotor_dynamics']))
     reward_coeff: list = field(default_factory=lambda: list(defaults()['rl'].values()))
+
+    action_mode: str = "rotor"
 
     def copy(self):
         """Own a snapshot, including the pybind model and mutable coefficients."""
@@ -54,18 +57,20 @@ class Config:
         # add_camera is unused by the original headless constructor; retain it as inert metadata.
         config = dict(num_envs=data['env']['num_envs'], seed=data['env']['seed'],
                       control_dt=data['quadrotor_env']['sim_dt'], max_t=data['quadrotor_env']['max_t'],
-                      model=model_from(data['quadrotor_dynamics']),
+                      model=model_from(data['quadrotor_dynamics']), action_mode=data['quadrotor_env']['action_mode'],
                       reward_coeff=[data['rl'][k] for k in defaults()['rl']])
         config.update(overrides)
         return cls(**config)
 
     def task(self):
-        task = legacy_task_config(self.model.mass)
+        if self.action_mode not in ("rotor", "ctbr"):
+            raise ValueError("action_mode must be rotor or ctbr")
+        task = ctbr_task_config(self.model) if self.action_mode == "ctbr" else legacy_task_config(self.model.mass)
         task.reward_coeff = self.reward_coeff
         return task
 
     def metadata(self):
-        return dict(num_envs=self.num_envs, slots=self.slots, seed=self.seed, device=self.device,
+        return dict(action_mode=self.action_mode, num_envs=self.num_envs, slots=self.slots, seed=self.seed, device=self.device,
                     control_dt=self.control_dt, max_t=self.max_t, reward_coeff=list(self.reward_coeff),
                     model={k: getattr(self.model, k) for k in ('mass', 'arm_length', 'motor_min', 'motor_max',
-                           'motor_tau', 'kappa', 'thrust_map', 'rate_limit')})
+                           'motor_tau', 'kappa', 'thrust_map', 'rate_limit', 'rate_gain')})

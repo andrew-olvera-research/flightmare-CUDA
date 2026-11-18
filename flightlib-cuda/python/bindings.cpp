@@ -207,8 +207,10 @@ PYBIND11_MODULE(_native,m){
     .def_readwrite("mass",&ModelConfig::mass).def_readwrite("arm_length",&ModelConfig::arm_length)
     .def_readwrite("motor_min",&ModelConfig::motor_min).def_readwrite("motor_max",&ModelConfig::motor_max)
     .def_readwrite("motor_tau",&ModelConfig::motor_tau).def_readwrite("kappa",&ModelConfig::kappa)
-    .def_readwrite("thrust_map",&ModelConfig::thrust_map).def_readwrite("rate_limit",&ModelConfig::rate_limit);
+    .def_readwrite("thrust_map",&ModelConfig::thrust_map).def_readwrite("rate_limit",&ModelConfig::rate_limit)
+    .def_readwrite("rate_gain",&ModelConfig::rate_gain);
   py::class_<TaskConfig>(m,"TaskConfig").def(py::init<>())
+    .def_readwrite("ctbr",&TaskConfig::ctbr)
     .def_readwrite("action_mean",&TaskConfig::action_mean).def_readwrite("action_scale",&TaskConfig::action_scale)
     .def_readwrite("goal",&TaskConfig::goal).def_readwrite("reward_coeff",&TaskConfig::reward_coeff);
   m.def("load_model",&loadModel);m.def("legacy_task_config",&legacyTaskConfig);

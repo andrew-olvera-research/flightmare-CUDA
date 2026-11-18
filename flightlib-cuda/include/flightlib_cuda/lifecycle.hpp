@@ -9,6 +9,7 @@ struct ModelConfig {
   Scalar motor_tau{0.05f}, kappa{0.016f};
   std::array<Scalar,3> thrust_map{1.3298253500372892e-06f,0.0038360810526746033f,-1.7689986848125325f};
   std::array<Scalar,3> rate_limit{6,6,6};
+  std::array<Scalar,3> rate_gain{16.6f,16.6f,5.f};
 };
 // Host setup only. Keys are runtime buffer names, values are component-major.
 using ModelTable = std::map<std::string,std::vector<Scalar>>;

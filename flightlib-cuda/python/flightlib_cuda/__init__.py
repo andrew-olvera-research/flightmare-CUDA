@@ -15,6 +15,15 @@ prepare_schedule = _native.prepare_schedule
 CoreOperation = _native.CoreOperation
 
 
+def ctbr_task_config(model):
+    """Normalized actions: zero is hover; +/-1 requests +/- the model rate limits."""
+    task = TaskConfig()
+    task.ctbr = True
+    task.action_mean = [9.81, 0., 0., 0.]
+    task.action_scale = [9.81, *model.rate_limit]
+    return task
+
+
 class Operation:
     """Bound optional helper; run writes output in place with no allocations."""
     def __init__(self, core, kind, input, output):

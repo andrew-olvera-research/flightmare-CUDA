@@ -165,6 +165,7 @@ struct LaneDiagnostics {
 // Legacy task is defined only for A=1. For A>1 these are per-platform outputs;
 // no shared reward, done reduction, or group reset policy is implied.
 struct TaskParameters {
+  Vector<const Mask> ctbr;            // [N], one flag per lane
   Matrix<const Scalar> action_mean;   // [4,N]
   Matrix<const Scalar> action_scale;  // [4,N]
   Matrix<const Scalar> goal;          // [12,N]

@@ -17,6 +17,7 @@ ModelConfig loadModel(const std::string& path) {
   if(map.size()!=3 || rates.size()!=3) throw std::invalid_argument("invalid model vector length");
   std::copy(map.begin(),map.end(),c.thrust_map.begin());
   std::copy(rates.begin(),rates.end(),c.rate_limit.begin());
+  if(node["rate_gain"]) c.rate_gain=node["rate_gain"].as<std::array<Scalar,3>>();
   prepareModels({c}); return c;
 }
 ModelTable prepareModels(const std::vector<ModelConfig>& configs) {
@@ -35,6 +36,7 @@ ModelTable prepareModels(const std::vector<ModelConfig>& configs) {
     for(auto v:{c.mass,c.arm_length,c.motor_min,c.motor_max,c.motor_tau,c.kappa})
       if(!std::isfinite(v)) throw std::invalid_argument("nonfinite model parameter");
     for(auto v:c.rate_limit) if(!(v>0) || !std::isfinite(v)) throw std::invalid_argument("invalid rate limit");
+    for(auto gain:c.rate_gain) if(!std::isfinite(gain) || gain<0) throw std::invalid_argument("invalid rate gain");
     // Flightlib computes the scalar factor in double before the Eigen float
     // multiplication. Keep its rounding boundary for randomized models too.
     Eigen::Vector3f j=c.mass/12.0*c.arm_length*c.arm_length*Eigen::Vector3f(4.5f,4.5f,7);
@@ -58,7 +60,7 @@ ModelTable prepareModels(const std::vector<ModelConfig>& configs) {
     for(Index k=0;k<3;++k) {
       put("inertia",k,p,3,j[k]); put("inverse_inertia",k,p,3,inverse(k,k));
       put("thrust_polynomial",k,p,3,c.thrust_map[k]); put("body_rate_limit",k,p,3,c.rate_limit[k]);
-      put("rate_gain",k,p,3,k==2?5.0f:16.6f);put("gravity",k,p,3,k==2?-9.81f:0);
+      put("rate_gain",k,p,3,c.rate_gain[k]);put("gravity",k,p,3,k==2?-9.81f:0);
     }
     for(Index r=0;r<4;++r) for(Index col=0;col<4;++col) {
       put("allocation",r*4+col,p,16,allocation(r,col));put("inverse_allocation",r*4+col,p,16,inv(r,col));

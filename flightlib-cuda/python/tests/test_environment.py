@@ -140,3 +140,24 @@ def test_gpu_policy_loop_and_external_capture_rejection():
     with torch.cuda.graph(graph, stream=stream):
         with pytest.raises(ValueError, match='capture'):
             b.step(graph=True, random=False, stream=stream)
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_ctbr_mix_and_plant_gains(graph):
+    from flightlib_cuda import ModelConfig, ctbr_task_config, legacy_task_config
+    plant = ModelConfig()
+    disabled = ModelConfig()
+    disabled.rate_gain = [0, 0, 0]
+    env = Environment(5, models=[plant, disabled], model_ids=[0, 0, 0, 1, 0])
+    env.configure_task([legacy_task_config(plant.mass)] + [ctbr_task_config(plant)] * 4)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    if graph:
+        env.capture(random=False)
+    env.actions.zero_()
+    env.actions[1:, 0, 1] = torch.tensor([1., 3., 1., -1.], device=env.device)
+    for _ in range(5):
+        assert env.step(graph=graph, random=False)["valid"].all()
+    roll = env.state[10]
+    assert roll[1] > 0 and roll[4] < 0
+    torch.testing.assert_close(env.state[:, 1], env.state[:, 2])
+    torch.testing.assert_close(env.state[:, 0], env.state[:, 3], atol=1e-5, rtol=1e-5)
