@@ -1,1 +1,2 @@
 /docker/*.sh text eol=lf
+/scripts/setup-isaac-renderer.sh text eol=lf

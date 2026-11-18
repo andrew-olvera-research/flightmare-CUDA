@@ -186,6 +186,11 @@ def execute(profile, runner):
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         runner.run('installed-transport-example', [cuda_python, '-m', 'flightrl_cuda.transport_example'],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
+        runner.run('isaac-adapter-install', [cuda_python, '-m', 'pip', 'install', '--no-deps',
+                   '--no-build-isolation', '--target', str(install), './flightmare-isaac'])
+        runner.run('installed-camera-contract', [cuda_python, '-m', 'pytest', '-q',
+                   str(ROOT/'flightmare-isaac/tests'), f'--junitxml={runner.directory / "camera-contract.xml"}'],
+                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
         runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',

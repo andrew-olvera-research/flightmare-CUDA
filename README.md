@@ -24,6 +24,10 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
 - Stream-ordered subscriptions for selected actor poses and delivered sensor packets.
   GPU readers can hold a frame across steps. Host readers receive compact records in
   pinned memory. See [transport, backpressure and measured costs](flightlib-cuda/docs/cuda14-transport.md).
+- Optional Isaac Sim RGB and metric depth for selected FPV cameras. Single-aircraft
+  environments share static course geometry, and custom policies receive timestamped
+  CUDA tensors. See [renderer setup and validation](flightlib-cuda/docs/cuda15-isaac.md)
+  and the [50 Hz RGB PPO benchmark](flightlib-cuda/docs/cuda15-isaac.md#vision-in-the-loop-ppo-benchmark).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,

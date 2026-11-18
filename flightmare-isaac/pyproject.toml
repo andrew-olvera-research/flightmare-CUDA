@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flightmare-isaac"
+version = "0.1.2"
+requires-python = ">=3.10"
+description = "Optional Isaac Sim visual consumer of Flightlib CUDA pose subscriptions"
+
+[tool.setuptools]
+packages = ["flightmare_isaac"]
