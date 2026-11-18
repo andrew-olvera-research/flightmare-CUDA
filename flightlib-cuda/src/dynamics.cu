@@ -5,10 +5,10 @@
 namespace flightlib_cuda::v1 {
 namespace {
 using detail::derivative;
-template<bool CheckCommand,bool Query=false>
+template<bool CheckCommand,bool Query=false,bool Moving=false>
 __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyView topo,
                               QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status,const Mask* enabled,
-                              detail::StaticScene scene={},CollisionFlags flags={}){
+                              detail::StaticScene scene={},CollisionFlags flags={},SwarmCollision swarm={}){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;
   if(n>=topo.batch.lanes)return;
   if(enabled&&!enabled[n])return;
@@ -27,6 +27,10 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   float old[3]={x[0],x[1],x[2]},j[3],ji[3];
   Mask queryValid=1;
   bool hit=false;
+  double low[3],high[3];
+  if constexpr(Moving)for(int c=0;c<3;++c){
+    swarm.trajectory(0,c,n)=x[c];low[c]=high[c]=x[c];
+  }
   double clearance=0;
   if constexpr(Query){
     auto initial=detail::startClearance(scene,old,queryValid);
@@ -71,6 +75,13 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
     float start[3]={x[0],x[1],x[2]};
     #pragma unroll
     for(int c=0;c<13;++c)x[c]+=sum[c]+dt*slope[c]*(1.0f/6);
+    if constexpr(Moving)for(int c=0;c<3;++c){
+      swarm.trajectory(2*s+1,c,n)=x[13+c];
+      swarm.trajectory(2*s+2,c,n)=x[c];
+      double margin=.125*double(dt)*dt*fabs(double(x[13+c]));
+      low[c]=fmin(low[c],fmin(double(start[c]),double(x[c]))-margin);
+      high[c]=fmax(high[c],fmax(double(start[c]),double(x[c]))+margin);
+    }
     if constexpr(Query){
       if(!hit && queryValid){
         detail::Arc arc[3];
@@ -91,6 +102,10 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   #pragma unroll
   for(int c=0;c<4;++c)valid &= isfinite(omega[c])&&isfinite(thrust[c]);
   if(!valid){status(n)=LaneStatus::NumericalFailure;return;}
+  if constexpr(Moving)for(int c=0;c<3;++c){
+    swarm.bounds(2*c,n)=__double2float_rd(fmin(low[c],double(x[c]))-swarm.radius);
+    swarm.bounds(2*c+1,n)=__double2float_ru(fmax(high[c],double(x[c]))+swarm.radius);
+  }
   if constexpr(Query){
     // World bounds can teleport the vehicle. Test the committed point only.
     if(!hit && queryValid && (schedule.substep_dt.size()==0 || x[0]!=beforeBounds[0] ||
@@ -115,6 +130,13 @@ void detail::launchDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask
 }
 void detail::launchDynamicsFirst(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled){
   dynamicsKernel<false><<<1,1,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+}
+void detail::launchSwarmDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,StaticScene scene){
+  auto blocks=(Offset{v.topology.batch.lanes}+127)/128;
+  if(scene.nodes)dynamicsKernel<false,true,true><<<blocks,128,0,stream>>>(v.state,v.commands,v.topology,
+    v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm);
+  else dynamicsKernel<false,false,true><<<blocks,128,0,stream>>>(v.state,v.commands,v.topology,
+    v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm);
 }
 void detail::launchSceneDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,StaticScene scene,bool first){
   unsigned blocks=first?1:(Offset{v.topology.batch.lanes}+127)/128;

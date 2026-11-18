@@ -157,6 +157,10 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset E = batch.environments, A = batch.slots_per_environment, N = batch.lanes;
   const Offset P = config.models, S = config.substeps, I = config.instances;
   const Offset Q = config.rays, K = config.candidates_per_environment;
+  if (!(config.agent_collision_radius >= 0 && config.agent_collision_radius <= 1.e6f) ||
+      (config.agent_collision_radius > 0 && K == 0))
+    throw std::invalid_argument("moving spheres require a finite radius and positive candidate capacity");
+  const Offset W = config.agent_collision_radius > 0 ? N : 0;
   AllocationPlan result;
 #define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);
 #include "buffers.def"
@@ -188,6 +192,8 @@ Simulation::Simulation(const RuntimeConfig& config) {
 #include "buffers.def"
 #undef FLC_BUFFER
   s->views.topology.batch = makeBatchShape(config.environments, config.slots);
+  s->views.swarm.radius=config.agent_collision_radius;
+  s->views.swarm.terminate=config.terminate_on_agent_collision;
   check(cudaMemsetAsync(s->arena, 0, s->plan.arena_bytes, s->stream), "initialize arena");
   const Offset count = std::max({Offset{s->views.topology.batch.lanes},
                                  Offset{config.instances}, Offset{config.rays}});

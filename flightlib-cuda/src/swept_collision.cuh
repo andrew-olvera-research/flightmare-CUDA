@@ -124,13 +124,14 @@ __device__ inline double cubic(const double* k, double t) {
 // Between face crossings the squared Euclidean distance to the actual box
 // is quartic. Its derivative is cubic. Partition at the cubic's turning
 // points, then bracket every negative-to-positive zero (a local minimum).
+template<bool Point=false>
 __device__ inline bool intervalContact(const Arc* local, const float* half,
                                        double lo, double hi, double radius2) {
   double mid = (lo + hi) * .5, k[4] = {};
   for (int axis = 0; axis < 3; ++axis) {
     Arc p = local[axis];
     double point = p.at(mid);
-    if (fabs(point) <= half[axis]) continue;
+    if (!Point && fabs(point) <= half[axis]) continue;
     double c = p.start - copysign(double(half[axis]), point), b = p.linear(),
            a = p.bend;
     k[0] += c * b;

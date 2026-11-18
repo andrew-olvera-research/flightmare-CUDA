@@ -108,8 +108,8 @@ use float64. The narrow phase includes a roundoff allowance of 64 binary64
 epsilons times the local coordinate scale. If that allowance would exceed the
 larger of 1 nm or one ten-millionth of the radius, the unresolved query and
 training transition are marked invalid. The guarantee applies to the declared
-sphere, static boxes and simulated trajectory. Other drones and individual
-rotor shapes would require additional geometry.
+sphere, static boxes and simulated trajectory. The optional [CUDA-12 moving
+sphere layer](cuda12-swarm-collision.md) handles other drones in the same world.
 
 The device tests compare graph and ordinary execution to an exhaustive NumPy
 oracle on 1,000 positions, including rotated frames, openings, wall and floor

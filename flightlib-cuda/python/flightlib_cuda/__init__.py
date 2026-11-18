@@ -182,7 +182,8 @@ class Core(_Resident):
 class Environment(_Resident):
     def __init__(self, environments, slots=1, control_dt=.01, device=0, seed=0,
                  models=None, model_ids=None, active=None, bounds=None, legacy=False,
-                 scene=None, collision_radius=.15, terminate_on_collision=False):
+                 scene=None, collision_radius=.15, terminate_on_collision=False,
+                 agent_collisions=False, candidate_capacity=None):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -192,8 +193,19 @@ class Environment(_Resident):
         self.model_ids = list(model_ids) if model_ids is not None else [0] * n
         self.active = list(active) if active is not None else [1] * n
         self.bounds = list(bounds) if bounds is not None else [v for v in (-20, 20, -20, 20, 0, 20) for _ in range(n)]
+        if agent_collisions:
+            if not 2**-150 < collision_radius <= 1e6:
+                raise ValueError("moving sphere radius must be positive in float32 and at most 1e6 m")
+            if candidate_capacity is None:
+                candidate_capacity = max(1, min(8 * slots, slots * (slots - 1) // 2))
+            if type(candidate_capacity) is not int or not 0 < candidate_capacity < 2**32-1:
+                raise ValueError("candidate_capacity must be a positive uint32 capacity")
+        elif candidate_capacity is not None:
+            raise ValueError("candidate_capacity requires agent_collisions")
         self._native = _native.NativeEnvironment(environments, slots, control_dt, device, seed,
-                                               self.models, self.model_ids, self.active, self.bounds)
+                                               self.models, self.model_ids, self.active, self.bounds,
+                                               candidate_capacity or 0, collision_radius if agent_collisions else 0.,
+                                               terminate_on_collision)
         with torch.cuda.device(self.device):
             actions = torch.zeros((environments, 4) if legacy else (environments, slots, 4), dtype=torch.float32, device=self.device)
             selected = torch.ones(n, dtype=torch.uint8, device=self.device)
@@ -205,11 +217,17 @@ class Environment(_Resident):
         if scene is not None:
             from .scene import bind_scene
             self._scene_bindings = bind_scene(scene, collision_radius, terminate_on_collision, self.device)
+        self.agent_collision_hit = self.candidate_pairs = self.candidate_count = self.candidate_overflow = None
+        if agent_collisions:
+            self.agent_collision_hit, self.candidate_pairs, self.candidate_count, self.candidate_overflow = (
+                torch.utils.dlpack.from_dlpack(self._native.tensor(name)) for name in
+                ('swarm.hit', 'candidates.instance_pair', 'candidates.count', 'candidates.overflow'))
+        if scene is not None or agent_collisions:
             self.collision_hit, self.collision_valid = (
                 torch.utils.dlpack.from_dlpack(self._native.tensor('collisions.' + name))
                 for name in ('hit', 'valid'))
         elif terminate_on_collision:
-            raise ValueError("collision termination requires a scene")
+            raise ValueError("collision termination requires a scene or agent_collisions")
         self.bind(actions, selected, state, time)
         self.outputs = {name: torch.utils.dlpack.from_dlpack(self._native.tensor('task_output.' + name))
                         for name in ('observation', 'transition_observation', 'reward', 'done', 'valid')}

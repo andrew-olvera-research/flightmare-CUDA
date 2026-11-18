@@ -16,6 +16,8 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
 - Optional continuous sphere-to-box collision queries in the dynamics kernel, with a shared room and
   seven-gate Split-S fixture for headless collection, Isaac USD and Unity.
   See [course assets, collision semantics and validation](flightlib-cuda/docs/cuda11-static-collision.md).
+- Opt-in continuous agent-to-agent contact in each environment, with bounded
+  candidate buffers and per-world overflow reporting. See [swarm collisions](flightlib-cuda/docs/cuda12-swarm-collision.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,
@@ -99,8 +101,9 @@ env.close()
 
 N = environments × agents. A CUDA thread advances one agent's fused dynamics;
 threads for agents inside one environment run in parallel just like agents in
-separate environments. Grouping is an indexing/ownership convention, not a
-shared swarm reward, inter-agent collision or communication model. Increasing N
+separate environments. By default the agents step independently. With
+`agent_collisions=True`, slots in the same environment share collision geometry
+and can terminate on contact. Rewards remain per agent. Increasing N
 exposes more GPU parallelism until compute, occupancy or memory limits dominate.
 The scalar integration dependency within one agent remains sequential.
 

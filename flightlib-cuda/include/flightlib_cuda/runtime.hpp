@@ -53,6 +53,16 @@ struct RuntimeConfig {
   // Diagnostic layout only: reserve gaps around every field for test canaries.
   // No checks or extra launches on the production path. Shapes are unchanged.
   bool debug_guards{false};
+  Scalar agent_collision_radius{0}; // Positive enables one moving sphere per active slot.
+  bool terminate_on_agent_collision{false};
+};
+
+struct SwarmCollision {
+  TensorView<Scalar,3> trajectory; // [2*S+1,3,N]: alternate position and acceleration
+  Matrix<Scalar> bounds;           // [6,N] swept AABB including the committed endpoint
+  Vector<Index> order, hit, issue; // sorted lanes, atomic hit [N], error bits [E]
+  Scalar radius{};
+  bool terminate{};
 };
 
 struct RuntimeViews {
@@ -73,6 +83,7 @@ struct RuntimeViews {
   RayQueryOutput ray_output;
   CandidatePairs candidates;
   CollisionFlags collisions;
+  SwarmCollision swarm;
 };
 
 namespace detail { struct RuntimeStorage; struct GraphStorage; }

@@ -106,8 +106,9 @@ struct NativeEnvironment {
   }
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
                     const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
-                    const std::vector<Mask>& active,const std::vector<float>& bounds):sim([&]{
-    RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=prepareSchedule(dt).size();c.device=device;c.seed=seed;return c;}()){
+                    const std::vector<Mask>& active,const std::vector<float>& bounds,Index capacity=0,float radius=0,bool terminate=false):sim([&]{
+    RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=prepareSchedule(dt).size();c.device=device;c.seed=seed;
+    c.candidates_per_environment=capacity;c.agent_collision_radius=radius;c.terminate_on_agent_collision=terminate;return c;}()){
     configure(sim,models,ids,active,bounds,dt);
     std::vector<TaskConfig> tasks;for(auto id:ids)tasks.push_back(legacyTaskConfig(models.at(id).mass));configureTask(sim,tasks);
   }
@@ -172,6 +173,7 @@ PYBIND11_MODULE(_native,m){
     .def("synchronize",[](NativeCore& c){c.sim.synchronize();});
   py::class_<NativeEnvironment>(m,"NativeEnvironment")
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
+    .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
     .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)

@@ -83,6 +83,11 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
 }
 __global__ void prepareActions(RuntimeViews v,Inputs in){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
+  if(v.swarm.radius){
+    v.swarm.hit(n)=0;
+    Index slots=v.topology.batch.slots_per_environment;
+    if(n%slots==0){v.swarm.issue(n/slots)=0;v.candidates.count(n/slots)=0;}
+  }
   v.task_output.valid.data[n]=0;
   if(!v.topology.active(n)){v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   float command[4],time=v.episodes.command_time(n)+v.schedule.control_dt;
@@ -106,6 +111,18 @@ using detail::StaticScene;
 template<bool InlineReset, bool TerminalReward, bool Query>
 __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
+  bool peerHit=false,staticHit=false;
+  if constexpr(Query)staticHit=scene.nodes && v.collisions.hit(n);
+  if constexpr(Query)if(v.swarm.radius){
+    Index slots=v.topology.batch.slots_per_environment,env=n/slots;
+    auto issue=v.swarm.issue(env);
+    if(n%slots==0)v.candidates.overflow(env)=issue&1;
+    peerHit=v.swarm.hit(n)!=0;
+    bool valid=!issue && (!scene.nodes || v.collisions.valid(n));
+    v.collisions.valid(n)=valid;
+    v.collisions.hit(n)=valid && (peerHit || staticHit);
+    v.swarm.hit(n)=valid && peerHit;
+  }
   if(v.diagnostics.status(n)!=LaneStatus::Ok){
     if constexpr(Query){v.collisions.hit(n)=0;v.collisions.valid(n)=0;}
     clearOutputs(v.task_output,n);return;
@@ -116,7 +133,8 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticSce
   bool terminal=x[2]<=.02f;
   if constexpr(Query){
     if(!v.collisions.valid(n)){clearOutputs(v.task_output,n);return;}
-    terminal|=v.collisions.hit(n) && scene.options[1]!=0.f;
+    terminal|=(staticHit && scene.options[1]!=0.f) ||
+              (peerHit && v.swarm.terminate);
   }
   observation(x,obs);float reward=0,action_norm=0;
   #pragma unroll
@@ -143,7 +161,7 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticSce
 }
 __global__ void resetKernel(RuntimeViews v,Inputs in,ResetSource source,bool automatic,bool query=false){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
-  if(!automatic && query && (in.selected[n] || !v.topology.active(n))){v.collisions.hit(n)=0;v.collisions.valid(n)=0;}
+  if(!automatic && query && (in.selected[n] || !v.topology.active(n))){v.collisions.hit(n)=0;v.collisions.valid(n)=0;if(v.swarm.radius)v.swarm.hit(n)=0;}
   if(!v.topology.active(n)){clearOutputs(v.task_output,n);v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   if(automatic){if(!v.task_output.valid.data[n]||!v.task_output.done.data[n])return;}
   else {v.diagnostics.status(n)=LaneStatus::Ok;if(in.selected[n]==0)return;
@@ -215,7 +233,7 @@ namespace {
 struct EnvironmentContext {ResetSource source;TaskExecution execution;};
 template<bool InlineReset,bool TerminalReward>
 void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,unsigned blocks,unsigned threads,cudaStream_t stream){
-  if(scene.nodes)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
+  if(scene.nodes || v.swarm.radius)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
   else taskKernel<InlineReset,TerminalReward,false><<<blocks,threads,0,stream>>>(v,in,source,scene);
 }
 void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
@@ -230,7 +248,10 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
     scene={static_cast<const float*>(nodes.data),static_cast<Index>(nodes.spec.shape[0]),
            static_cast<const float*>(b[5].tensor.data)};
   }
-  if(scene.nodes)detail::launchSceneDynamics(v,stream,v.task_output.valid.data,scene,first);
+  if(v.swarm.radius){
+    detail::launchSwarmDynamics(v,stream,v.task_output.valid.data,scene);
+    detail::launchMovingPairs(v,stream);
+  }else if(scene.nodes)detail::launchSceneDynamics(v,stream,v.task_output.valid.data,scene,first);
   else if(first)detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
   else detail::launchDynamics(v,stream,v.task_output.valid.data);
   if(first||ctx.execution==TaskExecution::FusedReset)
@@ -243,19 +264,22 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
   }
 }
 void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
-  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false,b.size()==6);
+  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false,b.size()==6 || v.swarm.radius);
 }
-void validateExecution(TaskExecution execution){if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset)throw std::invalid_argument("unknown task execution");}
+void validateExecution(const Simulation& s,TaskExecution execution){
+  if(s.views().swarm.radius && execution==TaskExecution::FirstLaneReset)
+    throw std::invalid_argument("moving contacts require a simultaneous world step");
+  if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset)throw std::invalid_argument("unknown task execution");}
 }
 void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);s.enqueue(resetLaunch,&source,&b);}
 void resetEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){validate(s,b);validateSource(source);s.enqueueFrom(stream,resetLaunch,&source,&b);}
 void stepEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){
-  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};s.enqueue(environmentLaunch,&ctx,&b);
+  validate(s,b);validateSource(source);validateExecution(s,execution);EnvironmentContext ctx{source,execution};s.enqueue(environmentLaunch,&ctx,&b);
 }
 void stepEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source,TaskExecution execution){
-  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};s.enqueueFrom(stream,environmentLaunch,&ctx,&b);
+  validate(s,b);validateSource(source);validateExecution(s,execution);EnvironmentContext ctx{source,execution};s.enqueueFrom(stream,environmentLaunch,&ctx,&b);
 }
 Graph captureEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){
-  validate(s,b);validateSource(source);validateExecution(execution);EnvironmentContext ctx{source,execution};return s.capture(environmentLaunch,&ctx,&b);
+  validate(s,b);validateSource(source);validateExecution(s,execution);EnvironmentContext ctx{source,execution};return s.capture(environmentLaunch,&ctx,&b);
 }
 }
