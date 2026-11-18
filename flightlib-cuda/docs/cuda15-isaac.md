@@ -200,3 +200,7 @@ starting the next.
 At 128×96, one environment completed 40.09 ticks/s and four environments
 completed 23.90 ticks/s (95.6 aggregate transitions/s). Smaller images alone
 did not bring this Windows harness to real-time 50 Hz.
+
+The [matched CPU and CUDA PPO comparison](cuda15-ppo-comparison.md) measures
+fresh-process camera throughput with course queries on and off, checks
+collision parity and times 100 million headless training transitions.
