@@ -272,7 +272,8 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
     launchTask<false,false>(v,in,ctx.source,scene,blocks,threads,stream);
   else{
     launchTask<false,true>(v,in,ctx.source,scene,blocks,threads,stream);
-    resetKernel<<<blocks,threads,0,stream>>>(v,in,ctx.source,true);
+    if(ctx.execution==TaskExecution::SeparateReset)
+      resetKernel<<<blocks,threads,0,stream>>>(v,in,ctx.source,true);
   }
 }
 void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
@@ -281,7 +282,13 @@ void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<Bin
 void validateExecution(const Simulation& s,TaskExecution execution){
   if(s.views().swarm.radius && execution==TaskExecution::FirstLaneReset)
     throw std::invalid_argument("moving contacts require a simultaneous world step");
-  if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset)throw std::invalid_argument("unknown task execution");}
+  if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset&&execution!=TaskExecution::DeferredReset)throw std::invalid_argument("unknown task execution");}
+}
+void finishResetFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){
+  validate(s,b);validateSource(source);
+  s.enqueueFrom(stream,[](const RuntimeViews& v,cudaStream_t st,const std::vector<BindingRequest>& inputs,void* ctx){
+    resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,st>>>(v,pointers(inputs),*static_cast<ResetSource*>(ctx),true);
+  },&source,&b);
 }
 void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);s.enqueue(resetLaunch,&source,&b);}
 void resetEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){validate(s,b);validateSource(source);s.enqueueFrom(stream,resetLaunch,&source,&b);}

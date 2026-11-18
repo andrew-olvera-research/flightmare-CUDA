@@ -26,6 +26,10 @@ and validity masks. See the [sensor API and qualification](cuda13-sensors.md).
 
 ## Device and host transport
 
+CUDA-14 supplies the installed producer API, pre-reset pose capture, device leases
+and pinned-host transport. The Isaac and Unity adapters can build on this boundary.
+See the [implemented contract and measurements](cuda14-transport.md).
+
 Use the runtime's stream ordering and stable bindings. Allocate subscriptions, device staging buffers, pinned host buffers and queue capacity at setup. A bridge worker owns protocol serialization and socket or middleware I/O. [Runtime API](../include/flightlib_cuda/runtime.hpp).
 
 | Consumer | Data movement and ownership |

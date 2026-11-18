@@ -4,6 +4,7 @@ from enum import IntEnum
 import torch
 from . import _native
 from .sensors import ImuConfig, OdometryConfig, SensorPackets, settings as _sensor_settings
+from .transport import Backpressure, Subscription, Transport, step_nanoseconds
 
 __version__ = '0.1.2'
 ModelConfig = _native.ModelConfig
@@ -184,7 +185,8 @@ class Environment(_Resident):
     def __init__(self, environments, slots=1, control_dt=.01, device=0, seed=0,
                  models=None, model_ids=None, active=None, bounds=None, legacy=False,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
-                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None):
+                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None,
+                 subscriptions=()):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -240,6 +242,8 @@ class Environment(_Resident):
         self.state = torch.utils.dlpack.from_dlpack(self._native.tensor('state.x'))
         self.time = torch.utils.dlpack.from_dlpack(self._native.tensor('state.time'))
         self.status = torch.utils.dlpack.from_dlpack(self._native.tensor('diagnostics.status'))
+        self._transport = Transport(self, subscriptions, control_dt) if subscriptions else None
+        self.subscriptions = self._transport.channels if self._transport else ()
         self.wait()
 
     def _stream(self, stream=None):
@@ -266,12 +270,22 @@ class Environment(_Resident):
         """Setup boundary; drains outstanding simulation work but does not step."""
         if torch.cuda.is_current_stream_capturing():
             raise ValueError('nested framework capture is unsupported')
-        self._native.capture(random)
+        self._native.capture(random, any(c.kind == "pose" and not c.closed for c in self.subscriptions))
 
     def step(self, graph=False, random=True, stream=None):
         """Outputs are borrowed and overwritten by subsequent operations."""
-        self._native.step(self._stream(stream), graph, random)
+        if self._transport is None:
+            self._native.step(self._stream(stream), graph, random)
+        else:
+            stream = torch.cuda.current_stream(self.device) if stream is None else stream
+            self._stream(stream)
+            self._transport.step(self._native, stream, graph, random)
         return self.outputs
+
+    def close_subscriptions(self):
+        for channel in self.subscriptions:
+            channel.close()
+        self._transport = None
 
     def wait(self, stream=None):
         """Order a different consumer stream before reading borrowed outputs."""
@@ -298,7 +312,12 @@ class Environment(_Resident):
 
     def configure(self, control_dt):
         """Apply host model/topology metadata; schedule capacity must stay fixed."""
+        self._check_transport_period(control_dt)
         self._native.configure(self.models, self.model_ids, self.active, self.bounds, control_dt)
+
+    def _check_transport_period(self, dt):
+        if self._transport and step_nanoseconds(dt) != self._transport.step_ns:
+            raise ValueError("reconstruct subscriptions to change the control period")
 
     def snapshot(self):
         """Explicit synchronized CPU export; never used by resident step."""

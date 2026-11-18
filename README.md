@@ -21,6 +21,9 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
 - Optional CUDA IMU and local odometry with configurable mounts, independent rates,
   noise, latency and dropout. Custom trainers can consume timestamped PyTorch packets.
   See the [sensor API, hardware comparison and timings](flightlib-cuda/docs/cuda13-sensors.md).
+- Stream-ordered subscriptions for selected actor poses and delivered sensor packets.
+  GPU readers can hold a frame across steps. Host readers receive compact records in
+  pinned memory. See [transport, backpressure and measured costs](flightlib-cuda/docs/cuda14-transport.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,

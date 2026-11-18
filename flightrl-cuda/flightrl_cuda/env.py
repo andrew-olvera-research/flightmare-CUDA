@@ -31,7 +31,7 @@ class TensorEnv:
 
     def __init__(self, config=None, *, random_reset=True, auto_reset=True,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
-                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None):
+                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None, subscriptions=()):
         self._config = (config or Config()).copy()
         c = self.config
         self.num_envs, self.device = c.num_envs*c.slots, torch.device('cuda', c.device)
@@ -39,7 +39,8 @@ class TensorEnv:
                                   seed=c.seed, models=[c.model], scene=scene,
                                   collision_radius=collision_radius, terminate_on_collision=terminate_on_collision,
                                   agent_collisions=agent_collisions, candidate_capacity=candidate_capacity,
-                                  imu=imu, odometry=odometry)
+                                  imu=imu, odometry=odometry, subscriptions=subscriptions)
+        self.subscriptions = self.engine.subscriptions
         self.imu, self.odometry = self.engine.imu, self.engine.odometry
         self.engine.configure_task(c.task())
         self.random_reset, self._auto_reset = random_reset, bool(auto_reset)
@@ -132,6 +133,7 @@ class TensorEnv:
         task=config.task()
         if not all(math.isfinite(x) for values in (task.reward_coeff,task.action_mean,task.action_scale,task.goal) for x in values):
             raise ValueError('task values exceed float32 domain')
+        self.engine._check_transport_period(config.control_dt)
         self.engine.record_usage()
         self.engine._native.configure([config.model],self.engine.model_ids,self.engine.active,self.engine.bounds,config.control_dt)
         self.engine.configure_task(task)
@@ -183,12 +185,15 @@ class TensorEnv:
         """
         self._ready()
         if not self.auto_reset: raise ValueError('test_step requires vector autoreset mode')
+        if any(not c.closed for c in self.subscriptions):
+            raise ValueError('subscriptions require a simultaneous world step')
         self.engine._native.test_step(self.engine._stream(),self.random_reset)
         self.stats_kernel.run(1,True)
         return self.result
 
     def close(self):
         if not self._closed:
+            self.engine.close_subscriptions()
             self.stream.synchronize()
             self.engine.synchronize(); self._closed = True; self._pending = False
 

@@ -1,5 +1,6 @@
 #include "flightlib_cuda/environment.hpp"
 #include "flightlib_cuda/operations.hpp"
+#include "flightlib_cuda/transport.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <ATen/dlpack.h>
@@ -34,7 +35,7 @@ BindingRequest request(py::object tensor,int device,DType dtype){
   if(!py::isinstance(tensor,torch.attr("Tensor"))||!tensor.attr("is_cuda").cast<bool>()||
      tensor.attr("device").attr("index").cast<int>()!=device||tensor.attr("requires_grad").cast<bool>())
     throw std::invalid_argument("input must be a CUDA tensor on the simulation device without requires_grad");
-  std::string expected=dtype==DType::Float32?"torch.float32":"torch.uint8";
+  std::string expected=dtype==DType::Float32?"torch.float32":dtype==DType::UInt32?"torch.uint32":"torch.uint8";
   if(py::str(tensor.attr("dtype")).cast<std::string>()!=expected||!tensor.attr("is_contiguous")().cast<bool>())
     throw std::invalid_argument("input dtype/layout mismatch; no implicit conversions");
   // A detached view retains the original storage when the caller replaces its tensor.
@@ -48,13 +49,14 @@ BindingRequest request(py::object tensor,int device,DType dtype){
   std::shared_ptr<void> owner(retained,[](void* p){py::gil_scoped_acquire gil;Py_DECREF(static_cast<PyObject*>(p));});
   return {{ptr,spec,strides},spec,owner};
 }
-void stableBindings(const Bindings& bindings){
-  for(auto& b:bindings.inputs()){
+void stableAllocations(const std::vector<BindingRequest>& inputs){
+  for(auto& b:inputs){
     auto owner=py::reinterpret_borrow<py::object>(static_cast<PyObject*>(b.lifetime.get()));
     if(owner.attr("data_ptr")().cast<std::uintptr_t>()!=reinterpret_cast<std::uintptr_t>(b.tensor.data))
       throw std::invalid_argument("bound tensor storage was resized; rebind and recapture");
   }
 }
+void stableBindings(const Bindings& bindings){stableAllocations(bindings.inputs());}
 struct NativeCore {
   Simulation sim;Bindings state_input,command_input;Graph graph;
   bool state_bound=false,command_bound=false,captured=false,captured_commands=false;
@@ -114,6 +116,7 @@ SensorSettings sensorSettings(py::dict d){
 }
 struct NativeEnvironment {
   Simulation sim;Bindings bindings;Graph graph;bool bound=false,captured=false,captured_random=true;
+  Graph transition_graph;
   TaskExecution execution=TaskExecution::FusedReset;
   void autoReset(bool enabled){execution=enabled?TaskExecution::FusedReset:TaskExecution::NoReset;graph=Graph{};captured=false;}
   void testStep(std::uintptr_t stream,bool random){stable();
@@ -152,11 +155,49 @@ struct NativeEnvironment {
     }
   }
   void reset(std::uintptr_t stream,bool random){stable();resetEnvironmentFrom(sim,bindings,reinterpret_cast<cudaStream_t>(stream),random?ResetSource::Random:ResetSource::Explicit);}
-  void capture(bool random){stable();graph=captureEnvironment(sim,bindings,random?ResetSource::Random:ResetSource::Explicit,execution);captured=true;captured_random=random;}
-  void step(std::uintptr_t stream,bool replay,bool random){stable();auto s=reinterpret_cast<cudaStream_t>(stream);
-    if(replay){if(!captured)throw std::logic_error("capture before graph replay");if(random!=captured_random)throw std::invalid_argument("reset mode differs from captured graph");sim.replayFrom(graph,s);}
-    else stepEnvironmentFrom(sim,bindings,s,random?ResetSource::Random:ResetSource::Explicit,execution);
+  void capture(bool random,bool poses=false){stable();auto source=random?ResetSource::Random:ResetSource::Explicit;
+    captured=false;graph=captureEnvironment(sim,bindings,source,execution);
+    transition_graph=poses && execution==TaskExecution::FusedReset?
+      captureEnvironment(sim,bindings,source,TaskExecution::DeferredReset):Graph{};
+    captured=true;captured_random=random;}
+  void step(std::uintptr_t stream,bool replay,bool random,bool poses=false){stable();auto s=reinterpret_cast<cudaStream_t>(stream);
+    bool defer=poses && execution==TaskExecution::FusedReset;
+    if(replay){if(!captured)throw std::logic_error("capture before graph replay");if(random!=captured_random)throw std::invalid_argument("reset mode differs from captured graph");sim.replayFrom(defer?transition_graph:graph,s);}
+    else stepEnvironmentFrom(sim,bindings,s,random?ResetSource::Random:ResetSource::Explicit,defer?TaskExecution::DeferredReset:execution);
   }
+  void finish(std::uintptr_t stream,bool random){if(execution==TaskExecution::FusedReset)
+    finishResetFrom(sim,bindings,reinterpret_cast<cudaStream_t>(stream),random?ResetSource::Random:ResetSource::Explicit);}
+};
+struct NativeExport {
+  Simulation sim; ExportKind kind; Bindings bindings;
+  std::vector<BindingRequest> owners;
+  py::object ready;
+  cudaEvent_t event;
+  bool submitted=false;
+  NativeExport(NativeEnvironment& env,ExportKind k,py::object lanes,py::object rows,py::object count):
+    sim(env.sim),kind(k),owners{request(lanes,sim.device(),DType::UInt32),
+      request(rows,sim.device(),DType::UInt8),request(count,sim.device(),DType::UInt32)} {
+    // The slot owns this registration and can disconnect before the runtime dies.
+    auto borrowed=owners;
+    for(auto& r:borrowed)r.lifetime.reset();
+    bindings=bindExport(sim,k,borrowed[0],borrowed[1],borrowed[2]);
+    auto cuda=py::module_::import("torch.cuda");
+    ready=cuda.attr("Event")();
+    ready.attr("record")(cuda.attr("current_stream")(sim.device()));
+    event=reinterpret_cast<cudaEvent_t>(ready.attr("cuda_event").cast<std::uintptr_t>());
+  }
+  void pack(std::uintptr_t stream){
+    stableAllocations(owners);
+    try {
+      packExportFrom(sim,bindings,kind,reinterpret_cast<cudaStream_t>(stream),event);
+      submitted=true;
+    } catch(...) {
+      // A failed CUDA submission may have enqueued work before reporting the error.
+      try { sim.synchronize(); } catch(...) {}
+      throw;
+    }
+  }
+  ~NativeExport(){if(submitted)cudaEventSynchronize(event);}
 };
 }
 PYBIND11_MODULE(_native,m){
@@ -199,11 +240,16 @@ PYBIND11_MODULE(_native,m){
     .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)
     .def("seed",[](NativeEnvironment& e,std::uint64_t seed){seedEnvironment(e.sim,seed);})
-    .def("capture",&NativeEnvironment::capture).def("step",&NativeEnvironment::step)
+    .def("capture",&NativeEnvironment::capture,py::arg("random"),py::arg("poses")=false)
+    .def("step",&NativeEnvironment::step,py::arg("stream"),py::arg("replay"),py::arg("random"),py::arg("poses")=false)
+    .def("finish_transition",&NativeEnvironment::finish)
     .def("tensor",[](NativeEnvironment& e,const std::string& name){return exportTensor(e.sim,name);})
     .def("wait",[](NativeEnvironment& e,std::uintptr_t s){e.sim.waitOn(reinterpret_cast<cudaStream_t>(s));})
     .def("record_usage",[](NativeEnvironment& e,std::uintptr_t s){e.sim.recordUsage(reinterpret_cast<cudaStream_t>(s));})
     .def("synchronize",[](NativeEnvironment& e){e.sim.synchronize();})
     .def("configure_task",[](NativeEnvironment& e,const std::vector<TaskConfig>& c){configureTask(e.sim,c);})
     .def("configure",[](NativeEnvironment& e,const std::vector<ModelConfig>& m,const std::vector<Index>& ids,const std::vector<Mask>& active,const std::vector<float>& bounds,float dt){configure(e.sim,m,ids,active,bounds,dt);});
+  py::enum_<ExportKind>(m,"ExportKind").value("POSE",ExportKind::Pose).value("IMU",ExportKind::Imu).value("ODOMETRY",ExportKind::Odometry);
+  py::class_<NativeExport>(m,"NativeExport").def(py::init<NativeEnvironment&,ExportKind,py::object,py::object,py::object>())
+    .def_readonly("ready",&NativeExport::ready).def("pack",&NativeExport::pack);
 }
