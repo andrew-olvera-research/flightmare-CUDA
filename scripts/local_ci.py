@@ -170,9 +170,9 @@ def execute(profile, runner):
         checkpoint=runner.directory/'policy.pt'
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
-        runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','8','--steps','8','--updates','2',
+        runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',
                    '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
-        runner.run('installed-rl-evaluate', [cuda_python,'-c',entry,'--envs','8','--steps','8','--evaluate',
+        runner.run('installed-rl-evaluate', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--evaluate',
                    '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
         runner.cmake('installed-native', 'flightlib-cuda/examples/native', str(runner.directory/'consumer'),
                      [f'-DCMAKE_PREFIX_PATH={install}'])

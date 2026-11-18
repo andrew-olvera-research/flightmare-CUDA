@@ -282,8 +282,11 @@ void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bi
   DeviceGuard guard(s.device);
   if(stream!=s.stream){
     int device=-1;check(cudaStreamGetDevice(stream,&device),"inspect stream device");
-    unsigned flags=0;check(cudaStreamGetFlags(stream,&flags),"inspect stream flags");
-    if(device!=s.device||(!bridge&&!(flags&cudaStreamNonBlocking)))throw std::invalid_argument("invalid external stream");
+    if(device!=s.device)throw std::invalid_argument("invalid external stream");
+    if(!bridge){
+      unsigned flags=0;check(cudaStreamGetFlags(stream,&flags),"inspect stream flags");
+      if(!(flags&cudaStreamNonBlocking))throw std::invalid_argument("invalid external stream");
+    }
   }
   cudaStreamCaptureStatus capture=cudaStreamCaptureStatusNone;
   check(cudaStreamIsCapturing(stream,&capture),"inspect stream capture");
@@ -292,13 +295,14 @@ void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bi
   cudaStream_t target=bridge?s.stream:stream;
   if(setup)++s.generation;
   try{
-    if(bridge){check(cudaEventRecord(s.ready,stream),"record producer");check(cudaStreamWaitEvent(target,s.ready,0),"wait producer");}
+    const bool handoff=bridge && stream!=target;
+    if(handoff){check(cudaEventRecord(s.ready,stream),"record producer");check(cudaStreamWaitEvent(target,s.ready,0),"wait producer");}
     // Elide only on the private stream: external handles can be destroyed/reused.
     if(target!=s.stream||s.last!=s.stream)check(cudaStreamWaitEvent(target,s.tail,0),"wait previous use");
     launch(s.views,target,inputs?inputs->inputs_:empty,context);
     check(cudaGetLastError(),"simulation launch");
     check(cudaEventRecord(s.tail,target),"record completion");s.last=target;
-    if(bridge)check(cudaStreamWaitEvent(stream,s.tail,0),"wait simulation output");
+    if(handoff)check(cudaStreamWaitEvent(stream,s.tail,0),"wait simulation output");
     ++s.submissions;
   }catch(...){s.poisoned=true;if(cudaEventRecord(s.tail,target)!=cudaSuccess)cudaStreamSynchronize(target);s.last=target;throw;}
 }

@@ -33,7 +33,9 @@ See the [capability mapping](flightlib-cuda/docs/cuda9-usage-contract.md),
 The supported development path is the existing Linux NVIDIA Docker Compose
 container (also tested through Windows Docker Desktop/WSL2). Configure
 `FLIGHTMARE_CUDA_ARCHITECTURES` for your GPU; the checked-in default targets the
-RTX 5070 Ti. See [local development](docs/local-development.md) for toolchain,
+RTX 5070 Ti. For a build targeting the GPU visible in your container, put
+`FLIGHTMARE_CUDA_ARCHITECTURES=native` in a repository-root `.env` before
+starting Compose. See [local development](docs/local-development.md) for toolchain,
 reports, CPU oracle integrity and known sanitizer/multi-GPU coverage limits.
 
 ```sh
@@ -90,8 +92,8 @@ overrides; `max_t` remains metadata rather than an added episode timeout.
 ## RL example and performance
 
 ```sh
-docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 1024 --steps 64 --updates 20 --checkpoint /build/policy.pt
-docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 1024 --steps 64 --evaluate --checkpoint /build/policy.pt
+docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 10 --slots 100 --steps 64 --updates 20 --checkpoint /build/policy.pt
+docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.train --envs 10 --slots 100 --steps 64 --evaluate --checkpoint /build/policy.pt
 ```
 
 On the tested RTX 5070 Ti / Ryzen 9800X3D, matched 32-step rollouts plus GAE and
@@ -103,7 +105,7 @@ collection traces show zero host/device transfers and zero allocations; PPO
 updates allocate temporary storage and are measured separately.
 
 See [RL evidence and reproduction](flightlib-cuda/docs/cuda9-validation.md) and
-[v0.1.1 grouping/scaling results](flightlib-cuda/docs/v0.1.1-scaling.md).
+[grouped benchmark reproduction](flightlib-cuda/docs/v0.1.1-scaling.md#november-18-reproduction).
 Large batches consume rollout and learner memory as well as simulation state;
 there is no claim of unbounded batch size. Further optimization should follow
 measured occupancy/register pressure, launch overhead and learner cost.

@@ -41,12 +41,7 @@ class TensorEnv:
         self.actions = self.engine.actions.view(self.num_envs, 4)
         self.running_return = torch.zeros(self.num_envs, device=self.device, dtype=torch.float32)
         self.running_length = torch.zeros(self.num_envs, dtype=torch.int64, device=self.device)
-        self._valid = torch.empty(self.num_envs, dtype=torch.bool, device=self.device)
-        self._done = torch.empty_like(self._valid)
-        self._selected = torch.empty_like(self._valid)
-        self._reward = torch.empty_like(self.running_return)
-        self._zero = torch.zeros_like(self.running_return)
-        self._zero_length = torch.zeros_like(self.running_length)
+        self._selected = torch.empty(self.num_envs, dtype=torch.bool, device=self.device)
         out = self.engine.outputs
         self.result = Transition(out['observation'].view(-1,12), out['transition_observation'].view(-1,12),
                                  out['reward'].view(-1), out['done'].view(-1), out['valid'].view(-1),
@@ -143,7 +138,7 @@ class TensorEnv:
             if actions.shape != self.actions.shape or actions.dtype != torch.float32 or actions.device != self.device or not actions.is_contiguous() or actions.requires_grad:
                 raise ValueError('actions must be dense float32 CUDA [N,4] without autograd')
             if actions.data_ptr() != self.actions.data_ptr(): self.actions.copy_(actions)
-        self.engine.step(graph=self.graph, random=self.random_reset)
+        self.engine.step(graph=self.graph, random=self.random_reset, stream=self.stream)
         self._pending = True
 
     def step_wait(self):

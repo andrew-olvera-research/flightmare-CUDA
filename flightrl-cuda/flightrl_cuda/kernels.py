@@ -80,5 +80,5 @@ class BoundKernel:
         if torch.cuda.current_stream(self.device)!=self.stream:
             raise ValueError('submit on the RL binding construction stream')
         with torch.cuda.device(self.device):
-            error=self.fn(*self.pointers,*args,torch.cuda.current_stream(self.device).cuda_stream)
+            error=self.fn(*self.pointers,*args,self.stream.cuda_stream)
         if error: raise RuntimeError('RL CUDA launch failed: '+str(error))

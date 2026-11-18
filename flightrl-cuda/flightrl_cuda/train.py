@@ -8,6 +8,7 @@ from . import Config, TensorEnv, ActorCritic, Rollout, ppo_update, save, load
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--envs', type=int, default=1024)
+    parser.add_argument('--slots', type=int, default=1, help='independent agents per environment')
     parser.add_argument('--steps', type=int, default=64)
     parser.add_argument('--updates', type=int, default=10)
     parser.add_argument('--seed', type=int, default=1)
@@ -15,7 +16,7 @@ def main():
     parser.add_argument('--evaluate', action='store_true')
     args = parser.parse_args()
     torch.manual_seed(args.seed)
-    config = Config(num_envs=args.envs, seed=args.seed)
+    config = Config(num_envs=args.envs, slots=args.slots, seed=args.seed)
     env = TensorEnv(config); env.reset(); env.capture()
     if args.evaluate:
         policy, _, data = load(args.checkpoint)
@@ -32,10 +33,9 @@ def main():
         history = Rollout(args.steps, env, policy)
         for update in range(args.updates):
             history.collect(); history.finish()
-            if not bool(history.valid.all()): raise RuntimeError('invalid rollout')
             metrics = ppo_update(policy, optimizer, history)
-            if not bool(history.valid.all()) or not bool(torch.isfinite(metrics).all()):
-                raise RuntimeError('invalid rollout or nonfinite training update')
+            if not bool(torch.isfinite(metrics).all()):
+                raise RuntimeError('nonfinite training update')
             print(json.dumps(dict(update=update+1, losses=metrics.tolist(), mean_reward=history.reward.mean().item())))
         save(args.checkpoint, policy, optimizer, config, args.updates)
     env.close()
