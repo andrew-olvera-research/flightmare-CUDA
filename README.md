@@ -18,6 +18,9 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
   See [course assets, collision semantics and validation](flightlib-cuda/docs/cuda11-static-collision.md).
 - Opt-in continuous agent-to-agent contact in each environment, with bounded
   candidate buffers and per-world overflow reporting. See [swarm collisions](flightlib-cuda/docs/cuda12-swarm-collision.md).
+- Optional CUDA IMU and local odometry with configurable mounts, independent rates,
+  noise, latency and dropout. Custom trainers can consume timestamped PyTorch packets.
+  See the [sensor API, hardware comparison and timings](flightlib-cuda/docs/cuda13-sensors.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,

@@ -159,8 +159,19 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticSce
   v.task_output.reward.data[n]=reward;v.task_output.done.data[n]=terminal;v.task_output.valid.data[n]=1;++v.episodes.step(n);
   if constexpr(InlineReset)if(terminal&&!resetLane(v,in,n,source))clearOutputs(v.task_output,n);
 }
+__device__ void clearSensorPackets(SensorBuffers b,Index n){
+  for(Offset slot=0;slot<b.values.shape[0];++slot){
+    b.valid(slot,n)=0;
+    for(int field=0;field<6;++field)b.metadata(field,slot,n)=0;
+    for(Offset c=0;c<b.values.shape[2];++c)b.values(slot,n,c)=0;
+  }
+}
 __global__ void resetKernel(RuntimeViews v,Inputs in,ResetSource source,bool automatic,bool query=false){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
+  if(!automatic && (in.selected[n] || !v.topology.active(n))){
+    if(v.imu.values.data)clearSensorPackets(v.imu,n);
+    if(v.odometry.values.data)clearSensorPackets(v.odometry,n);
+  }
   if(!automatic && query && (in.selected[n] || !v.topology.active(n))){v.collisions.hit(n)=0;v.collisions.valid(n)=0;if(v.swarm.radius)v.swarm.hit(n)=0;}
   if(!v.topology.active(n)){clearOutputs(v.task_output,n);v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   if(automatic){if(!v.task_output.valid.data[n]||!v.task_output.done.data[n])return;}
@@ -254,6 +265,7 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
   }else if(scene.nodes)detail::launchSceneDynamics(v,stream,v.task_output.valid.data,scene,first);
   else if(first)detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
   else detail::launchDynamics(v,stream,v.task_output.valid.data);
+  if(v.sensor_truth.samples.data)detail::launchSensors(v,stream,first);
   if(first||ctx.execution==TaskExecution::FusedReset)
     launchTask<true,true>(v,in,ctx.source,scene,blocks,threads,stream);
   else if(ctx.execution==TaskExecution::NoReset)

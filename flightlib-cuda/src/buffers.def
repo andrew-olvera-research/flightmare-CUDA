@@ -70,3 +70,17 @@ FLC_BUFFER(swarm.bounds, Scalar, "swarm_collision", 6, W)
 FLC_BUFFER(swarm.order, Index, "swarm_collision", W)
 FLC_BUFFER(swarm.hit, Index, "swarm_collision", W)
 FLC_BUFFER(swarm.issue, Index, "swarm_collision", W ? E : 0)
+FLC_BUFFER(sensor_truth.samples, Scalar, "sensor_truth", S, 16, T)
+FLC_BUFFER(sensor_truth.corrected, Mask, "sensor_truth", T)
+#define FLC_SENSOR(name,C,D,R) \
+  FLC_BUFFER(name.state,std::uint64_t,"sensors",5,D ? N : 0) \
+  FLC_BUFFER(name.queue,Scalar,"sensors",R,N,C) \
+  FLC_BUFFER(name.acquired,std::uint64_t,"sensors",R,N) \
+  FLC_BUFFER(name.queue_valid,Mask,"sensors",R,N) \
+  FLC_BUFFER(name.values,Scalar,"sensors",D,N,C) \
+  FLC_BUFFER(name.valid,Mask,"sensors",D,N) \
+  FLC_BUFFER(name.metadata,std::uint64_t,"sensors",6,D,N)
+FLC_SENSOR(imu,6,imuPackets,imuQueue)
+FLC_SENSOR(odometry,10,odomPackets,odomQueue)
+FLC_BUFFER(imu.drift,Scalar,"sensors",6,imuPackets ? N : 0)
+#undef FLC_SENSOR

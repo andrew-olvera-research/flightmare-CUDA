@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <math_constants.h>
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <cstdio>
 #include <mutex>
@@ -161,6 +162,29 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
       (config.agent_collision_radius > 0 && K == 0))
     throw std::invalid_argument("moving spheres require a finite radius and positive candidate capacity");
   const Offset W = config.agent_collision_radius > 0 ? N : 0;
+  const Offset T = config.imu.period_ns || config.odometry.period_ns ? N : 0;
+  if(T && (!S || !config.sensor_step_ns))throw std::invalid_argument("sensors require positive simulation time");
+  auto capacity=[&](const SensorSettings& settings,bool queue)->Offset{
+    if(!settings.period_ns)return 0;
+    if(!settings.phase_ns || settings.phase_ns>settings.period_ns)throw std::invalid_argument("invalid sensor phase");
+    if(!(settings.dropout>=0 && settings.dropout<=1))throw std::invalid_argument("invalid sensor dropout");
+    double norm=0;for(float q:settings.mount)norm+=double(q)*q;
+    if(!(std::abs(norm-1)<1e-5))throw std::invalid_argument("sensor mount must be a unit quaternion");
+    for(int i=0;i<6;++i){
+      for(float x:{settings.noise[i],settings.walk[i],settings.limit[i],settings.increment_width[i]})
+        if(!std::isfinite(x)||x<0)throw std::invalid_argument("invalid sensor error scale");
+      if(!std::isfinite(settings.bias[i]))throw std::invalid_argument("invalid sensor bias");
+    }
+    for(int i=0;i<3;++i)if(!std::isfinite(settings.offset[i])||
+        !std::isfinite(settings.attitude_std[i])||settings.attitude_std[i]<0)
+      throw std::invalid_argument("invalid sensor offset or attitude error");
+    if(&settings==&config.imu)for(float x:settings.offset)if(x!=0)
+      throw std::invalid_argument("IMU requires a body-origin mount");
+    Offset span=add(config.sensor_step_ns,queue?settings.latency_ns:0);
+    return add(span/settings.period_ns,3); // endpoint quantization and inclusive first deadline
+  };
+  const Offset imuPackets=capacity(config.imu,false),imuQueue=capacity(config.imu,true);
+  const Offset odomPackets=capacity(config.odometry,false),odomQueue=capacity(config.odometry,true);
   AllocationPlan result;
 #define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);
 #include "buffers.def"
@@ -194,6 +218,14 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.topology.batch = makeBatchShape(config.environments, config.slots);
   s->views.swarm.radius=config.agent_collision_radius;
   s->views.swarm.terminate=config.terminate_on_agent_collision;
+  s->views.sensor_step_ns=config.sensor_step_ns;
+  s->views.imu.settings=config.imu;
+  s->views.odometry.settings=config.odometry;
+  for(auto* cfg:{&s->views.imu.settings,&s->views.odometry.settings}){
+    cfg->stochastic=cfg->dropout>0;
+    for(int i=0;i<6;++i)cfg->stochastic|=cfg->noise[i]>0 || cfg->walk[i]>0;
+    for(auto a:cfg->attitude_std)cfg->stochastic|=a>0;
+  }
   check(cudaMemsetAsync(s->arena, 0, s->plan.arena_bytes, s->stream), "initialize arena");
   const Offset count = std::max({Offset{s->views.topology.batch.lanes},
                                  Offset{config.instances}, Offset{config.rays}});

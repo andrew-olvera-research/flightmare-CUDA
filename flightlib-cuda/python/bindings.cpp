@@ -97,6 +97,21 @@ struct NativeOperation {
     bindings(bindOperation(sim,op,request(input,sim.device(),DType::Float32),request(output,sim.device(),DType::Float32))){}
   void run(std::uintptr_t stream,float dt){stableBindings(bindings);evaluateOperationFrom(sim,op,bindings,reinterpret_cast<cudaStream_t>(stream),dt);}
 };
+template<std::size_t N>
+void components(py::dict d,const char* key,float (&out)[N]){
+  auto x=d[key].cast<std::array<float,N>>();std::copy(x.begin(),x.end(),out);
+}
+SensorSettings sensorSettings(py::dict d){
+  SensorSettings s{};
+  if(d.empty())return s;
+  s.period_ns=d["period_ns"].cast<std::uint64_t>();s.phase_ns=d["phase_ns"].cast<std::uint64_t>();
+  s.latency_ns=d["latency_ns"].cast<std::uint64_t>();s.seed=d["seed"].cast<std::uint64_t>();
+  s.dropout=d["dropout"].cast<float>();components(d,"mount",s.mount);components(d,"offset",s.offset);
+  components(d,"noise",s.noise);components(d,"bias",s.bias);components(d,"walk",s.walk);
+  components(d,"limit",s.limit);components(d,"attitude_std",s.attitude_std);
+  components(d,"increment_width",s.increment_width);
+  return s;
+}
 struct NativeEnvironment {
   Simulation sim;Bindings bindings;Graph graph;bool bound=false,captured=false,captured_random=true;
   TaskExecution execution=TaskExecution::FusedReset;
@@ -106,8 +121,13 @@ struct NativeEnvironment {
   }
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
                     const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
-                    const std::vector<Mask>& active,const std::vector<float>& bounds,Index capacity=0,float radius=0,bool terminate=false):sim([&]{
-    RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=prepareSchedule(dt).size();c.device=device;c.seed=seed;
+                    const std::vector<Mask>& active,const std::vector<float>& bounds,Index capacity=0,float radius=0,bool terminate=false,
+                    py::dict imu={},py::dict odometry={}):sim([&]{
+    auto schedule=prepareSchedule(dt);
+    RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=schedule.size();c.device=device;c.seed=seed;
+    c.imu=sensorSettings(imu);c.odometry=sensorSettings(odometry);
+    validateSensorPeriods(schedule,c.imu,c.odometry);
+    if(c.imu.period_ns||c.odometry.period_ns)c.sensor_step_ns=std::llround(double(dt)*1e9);
     c.candidates_per_environment=capacity;c.agent_collision_radius=radius;c.terminate_on_agent_collision=terminate;return c;}()){
     configure(sim,models,ids,active,bounds,dt);
     std::vector<TaskConfig> tasks;for(auto id:ids)tasks.push_back(legacyTaskConfig(models.at(id).mass));configureTask(sim,tasks);
@@ -174,6 +194,7 @@ PYBIND11_MODULE(_native,m){
   py::class_<NativeEnvironment>(m,"NativeEnvironment")
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool>())
+    .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
     .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)

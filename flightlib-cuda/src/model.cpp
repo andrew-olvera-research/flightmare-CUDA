@@ -78,6 +78,15 @@ std::vector<Scalar> prepareSchedule(Scalar dt,Scalar max_dt,Index capacity) {
   }
   return result;
 }
+void validateSensorPeriods(const std::vector<Scalar>& schedule,
+                           const SensorSettings& imu, const SensorSettings& odometry) {
+  if (!imu.period_ns && !odometry.period_ns) return;
+  if (schedule.empty()) throw std::invalid_argument("sensors require positive simulation time");
+  auto longest = std::uint64_t(std::llround(double(*std::max_element(schedule.begin(), schedule.end())) * 1e9));
+  for (auto period : {imu.period_ns, odometry.period_ns})
+    if (period && period < longest)
+      throw std::invalid_argument("sensor period is shorter than a physics substep");
+}
 TypedCommand adaptCommand(const LegacyCommand& c) {
   const bool rates=std::isfinite(c.collective)&&std::all_of(c.rates.begin(),c.rates.end(),[](Scalar x){return std::isfinite(x);});
   const bool rotors=std::all_of(c.thrusts.begin(),c.thrusts.end(),[](Scalar x){return std::isfinite(x);});
@@ -98,6 +107,11 @@ void configure(Simulation& sim,const std::vector<ModelConfig>& models,const std:
     }
   }
   auto table=prepareModels(models);auto schedule=prepareSchedule(dt,max_dt, v.schedule.substep_dt.size());
+  if(v.sensor_truth.samples.data){
+    if(std::llround(double(dt)*1e9)!=v.sensor_step_ns)
+      throw std::invalid_argument("reconstruct sensors to change the control period");
+    validateSensorPeriods(schedule, v.imu.settings, v.odometry.settings);
+  }
   if(schedule.size()!=v.schedule.substep_dt.size()) throw std::invalid_argument("schedule length differs from frozen allocation");
   struct Upload {void* dst;const void* src;size_t bytes;};
   struct Context {std::vector<Upload> copies;Scalar dt;}; Context context{{},dt};

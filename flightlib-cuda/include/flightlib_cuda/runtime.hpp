@@ -1,6 +1,7 @@
 #pragma once
 
 #include "flightlib_cuda/contracts.hpp"
+#include "flightlib_cuda/sensors.hpp"
 #include <cuda_runtime_api.h>
 #include <array>
 #include <memory>
@@ -55,6 +56,8 @@ struct RuntimeConfig {
   bool debug_guards{false};
   Scalar agent_collision_radius{0}; // Positive enables one moving sphere per active slot.
   bool terminate_on_agent_collision{false};
+  std::uint64_t sensor_step_ns{};
+  SensorSettings imu{}, odometry{};
 };
 
 struct SwarmCollision {
@@ -84,6 +87,9 @@ struct RuntimeViews {
   CandidatePairs candidates;
   CollisionFlags collisions;
   SwarmCollision swarm;
+  SensorTruth sensor_truth;
+  SensorBuffers imu, odometry;
+  std::uint64_t sensor_step_ns{};
 };
 
 namespace detail { struct RuntimeStorage; struct GraphStorage; }

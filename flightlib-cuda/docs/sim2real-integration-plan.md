@@ -14,6 +14,10 @@ Give a validation vehicle or interacting validation swarm its own Simulation ins
 
 ## CUDA and sensor work
 
+CUDA-13 implements the resident sensor timeline, IMU and local odometry. Renderer
+and flight-software adapters can consume the same delivery timestamps, episode IDs
+and validity masks. See the [sensor API and qualification](cuda13-sensors.md).
+
 1. CUDA-11 now checks the spherical body against static gate and room colliders over every integration substep. A shared BVH serves all lanes, and the task consumes per-lane hit and validity before reward, terminal observation and autoreset. CUDA-12 adds opt-in continuous sphere pairs with environment-local candidate capacity and overflow reporting. [Moving contact contract](cuda12-swarm-collision.md). [Frozen collision and asset contract](cuda11-static-collision.md).
 2. Add an integer simulation timebase and independent sensor periods, sample phases and delivery deadlines alongside the existing integration schedule. Preserve existing floating-point integration semantics. Sample at an integration boundary or specify how intermediate truth is reconstructed. Capture terminal samples before reset. Use an episode generation to invalidate pending old samples. Keep the external flight-software clock monotonic across a reset, or restart the entire session explicitly.
 3. Provide a batched sensor interface with setup-time mount, calibration, rate and seed, per-lane persistent model state, and caller-owned output storage. Each packet carries sensor and vehicle IDs, episode, sequence, acquisition and availability timestamps, validity and units/frame from the schema. Begin with ideal output, then add selectable calibration, bias drift, white noise with explicit density units, delay, saturation and dropout. Users can replace the physical measurement function or the error model. Size delay queues from configured rate and maximum latency.

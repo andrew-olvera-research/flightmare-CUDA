@@ -5,10 +5,10 @@
 namespace flightlib_cuda::v1 {
 namespace {
 using detail::derivative;
-template<bool CheckCommand,bool Query=false,bool Moving=false>
+template<bool CheckCommand,bool Query=false,bool Moving=false,bool Capture=false>
 __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyView topo,
                               QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status,const Mask* enabled,
-                              detail::StaticScene scene={},CollisionFlags flags={},SwarmCollision swarm={}){
+                              detail::StaticScene scene={},CollisionFlags flags={},SwarmCollision swarm={},SensorTruth truth={}){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;
   if(n>=topo.batch.lanes)return;
   if(enabled&&!enabled[n])return;
@@ -89,12 +89,20 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
         if(!detail::insideClearance(arc,old,clearance))hit=detail::sweptOverlap(scene,arc,queryValid);
       }
     }
+    if constexpr(Capture){
+      for(int c=0;c<16;++c)truth.samples(s,c,n)=x[c];
+    }
     // CPU normalizes the old quaternion then overwrites it with next_state.
   }
   // Detect failure before world-box clamps can conceal nonfinite intermediates.
   #pragma unroll
   for(int c=0;c<25;++c)if(!isfinite(x[c])){status(n)=LaneStatus::NumericalFailure;return;}
   float beforeBounds[3]={x[0],x[1],x[2]};
+  if constexpr(Capture){
+    truth.corrected(n)=x[0]<topo.world_bounds(0,n)||x[0]>topo.world_bounds(1,n)||
+      x[1]<topo.world_bounds(2,n)||x[1]>topo.world_bounds(3,n)||
+      x[2]<=topo.world_bounds(4,n)||x[2]>topo.world_bounds(5,n);
+  }
   detail::constrain(x,old,topo,n);
   float time=state.time(n)+schedule.control_dt;valid=isfinite(time);
   #pragma unroll
@@ -123,25 +131,29 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   for(int c=0;c<4;++c){state.motor_omega(c,n)=omega[c];state.motor_thrust(c,n)=thrust[c];}
   state.time(n)=time;status(n)=LaneStatus::Ok;
 }
+template<bool Check,bool Query=false,bool Moving=false>
+void launch(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,detail::StaticScene scene={},bool first=false){
+  unsigned blocks=first?1:(Offset{v.topology.batch.lanes}+127)/128,threads=first?1:128;
+  if(v.sensor_truth.samples.data)
+    dynamicsKernel<Check,Query,Moving,true><<<blocks,threads,0,stream>>>(v.state,v.commands,v.topology,v.models,
+      v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm,v.sensor_truth);
+  else dynamicsKernel<Check,Query,Moving><<<blocks,threads,0,stream>>>(v.state,v.commands,v.topology,v.models,
+      v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm);
+}
 }
 void detail::launchDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,bool require_command_ok){
-  if(require_command_ok)dynamicsKernel<true><<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
-  else dynamicsKernel<false><<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+  if(require_command_ok)launch<true>(v,stream,enabled);
+  else launch<false>(v,stream,enabled);
 }
 void detail::launchDynamicsFirst(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled){
-  dynamicsKernel<false><<<1,1,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+  launch<false>(v,stream,enabled,{},true);
 }
 void detail::launchSwarmDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,StaticScene scene){
-  auto blocks=(Offset{v.topology.batch.lanes}+127)/128;
-  if(scene.nodes)dynamicsKernel<false,true,true><<<blocks,128,0,stream>>>(v.state,v.commands,v.topology,
-    v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm);
-  else dynamicsKernel<false,false,true><<<blocks,128,0,stream>>>(v.state,v.commands,v.topology,
-    v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions,v.swarm);
+  if(scene.nodes)launch<false,true,true>(v,stream,enabled,scene);
+  else launch<false,false,true>(v,stream,enabled);
 }
 void detail::launchSceneDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,StaticScene scene,bool first){
-  unsigned blocks=first?1:(Offset{v.topology.batch.lanes}+127)/128;
-  dynamicsKernel<false,true><<<blocks,first?1:128,0,stream>>>(v.state,v.commands,v.topology,
-      v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions);
+  launch<false,true>(v,stream,enabled,scene,first);
 }
 namespace {
 void dynamicsLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>&,void*){

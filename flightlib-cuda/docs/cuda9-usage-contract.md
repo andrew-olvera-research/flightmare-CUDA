@@ -6,6 +6,10 @@ frozen v1 simulation arena, state layout, model preparation and equations remain
 unchanged. Packaging/public README and release qualification are separate final
 operations. See [validation](cuda9-validation.md) for the measured envelope.
 
+The capability mapping below records the CUDA-9 release. Subsequent milestones add
+[course collisions](cuda11-static-collision.md), [swarm contacts](cuda12-swarm-collision.md)
+and a [headless IMU and local odometry API](cuda13-sensors.md).
+
 ## Storage and ordering
 
 N = E * A, lane = environment * A + slot. Slots are independent tasks. All
