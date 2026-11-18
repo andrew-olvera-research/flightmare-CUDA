@@ -1,0 +1,100 @@
+{
+  "schema": "flightmare.boxes.v1",
+  "assets": [
+    {
+      "name": "Room",
+      "boxes": [
+        {
+          "name": "Floor",
+          "center": [
+            0,
+            0,
+            -0.1
+          ],
+          "size": [
+            32,
+            24,
+            0.2
+          ]
+        },
+        {
+          "name": "Ceiling",
+          "center": [
+            0,
+            0,
+            8.1
+          ],
+          "size": [
+            32,
+            24,
+            0.2
+          ]
+        },
+        {
+          "name": "West",
+          "center": [
+            -16.1,
+            0,
+            4
+          ],
+          "size": [
+            0.2,
+            24,
+            8
+          ]
+        },
+        {
+          "name": "East",
+          "center": [
+            16.1,
+            0,
+            4
+          ],
+          "size": [
+            0.2,
+            24,
+            8
+          ]
+        },
+        {
+          "name": "South",
+          "center": [
+            0,
+            -12.1,
+            4
+          ],
+          "size": [
+            32,
+            0.2,
+            8
+          ]
+        },
+        {
+          "name": "North",
+          "center": [
+            0,
+            12.1,
+            4
+          ],
+          "size": [
+            32,
+            0.2,
+            8
+          ]
+        }
+      ]
+    }
+  ],
+  "instances": [
+    {
+      "name": "Room",
+      "asset": "Room",
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "yaw_deg": 0
+    }
+  ]
+}

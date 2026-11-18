@@ -178,6 +178,8 @@ def execute(profile, runner):
         )
         runner.run('installed-custom-collector', [cuda_python, '-c', consumer],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
+        runner.run('installed-course-rollout', [cuda_python, '-m', 'flightrl_cuda.course_rollout'],
+                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
         runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',

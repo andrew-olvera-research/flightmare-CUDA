@@ -111,9 +111,15 @@ struct NativeEnvironment {
     configure(sim,models,ids,active,bounds,dt);
     std::vector<TaskConfig> tasks;for(auto id:ids)tasks.push_back(legacyTaskConfig(models.at(id).mass));configureTask(sim,tasks);
   }
-  void bind(py::object a,py::object selected,py::object x,py::object time){
+  void bind(py::object a,py::object selected,py::object x,py::object time,py::tuple scene){
+    std::vector<BindingRequest> collision;
+    if(scene.size()){
+      if(scene.size()!=2)throw std::invalid_argument("expected scene nodes and options");
+      for(auto tensor:scene)collision.push_back(request(py::reinterpret_borrow<py::object>(tensor),
+        sim.device(),DType::Float32));
+    }
     auto b=bindTaskInputs(sim,request(a,sim.device(),DType::Float32),request(selected,sim.device(),DType::UInt8),
-                         request(x,sim.device(),DType::Float32),request(time,sim.device(),DType::Float32));
+                         request(x,sim.device(),DType::Float32),request(time,sim.device(),DType::Float32),std::move(collision));
     graph=Graph{};captured=false;bindings=std::move(b);bound=true;
   }
   void stable(){
@@ -167,7 +173,7 @@ PYBIND11_MODULE(_native,m){
   py::class_<NativeEnvironment>(m,"NativeEnvironment")
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
-    .def("bind",&NativeEnvironment::bind).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
+    .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)
     .def("seed",[](NativeEnvironment& e,std::uint64_t seed){seedEnvironment(e.sim,seed);})
     .def("capture",&NativeEnvironment::capture).def("step",&NativeEnvironment::step)

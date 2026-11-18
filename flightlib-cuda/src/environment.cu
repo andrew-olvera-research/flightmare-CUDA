@@ -102,13 +102,46 @@ __global__ void prepareActions(RuntimeViews v,Inputs in){
   v.commands.mode(n)=CommandMode::RotorThrust;v.commands.time(n)=time;
   v.episodes.command_time(n)=time;v.task_output.valid.data[n]=1;
 }
-template<bool InlineReset, bool TerminalReward=true>
-__global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source){
+// Preorder BVH rows: center, half extents, cos/sin yaw, escape index, leaf.
+struct StaticScene {const float* nodes; Index count; const float* options;};
+__device__ bool staticOverlap(StaticScene scene,float x,float y,float z,Mask& valid) {
+  float radius=scene.options[0];
+  for(Index i=0;i<scene.count;) {
+    const float* box=scene.nodes+Offset{i}*10;
+    float dx=x-box[0], dy=y-box[1];
+    float u=fmaxf(fabsf(box[6]*dx+box[7]*dy)-box[3],0.f);
+    float w=fmaxf(fabsf(-box[7]*dx+box[6]*dy)-box[4],0.f);
+    float h=fmaxf(fabsf(z-box[2])-box[5],0.f);
+    if(u*u+w*w+h*h<=radius*radius) {
+      if(box[9]!=0.f)return true;
+      ++i;
+    } else {
+      float escape=box[8];
+      if(!(escape>=i+1 && escape<=scene.count && truncf(escape)==escape)){valid=0;return false;}
+      i=static_cast<Index>(escape);
+    }
+  }
+  return false;
+}
+template<bool InlineReset, bool TerminalReward, bool Query>
+__global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
-  if(v.diagnostics.status(n)!=LaneStatus::Ok){clearOutputs(v.task_output,n);return;}
+  if(v.diagnostics.status(n)!=LaneStatus::Ok){
+    if constexpr(Query){v.collisions.hit(n)=0;v.collisions.valid(n)=0;}
+    clearOutputs(v.task_output,n);return;
+  }
   float x[13],obs[12];
   #pragma unroll
   for(int c=0;c<13;++c)x[c]=v.state.x(c,n);
+  bool terminal=x[2]<=.02f;
+  if constexpr(Query){
+    Mask valid=1;
+    bool hit=staticOverlap(scene,x[0],x[1],x[2],valid);
+    v.collisions.hit(n)=hit;
+    v.collisions.valid(n)=valid;
+    if(!valid){clearOutputs(v.task_output,n);return;}
+    terminal|=hit && scene.options[1]!=0.f;
+  }
   observation(x,obs);float reward=0,action_norm=0;
   #pragma unroll
   for(int group=0;group<4;++group){float norm=0;
@@ -118,7 +151,7 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source){
     float raw=in.action[4ULL*n+group];action_norm+=raw*raw;
   }
   reward+=v.task_parameters.reward_coeff(4,n)*sqrtf(action_norm);reward+=.1f;
-  bool terminal=x[2]<=.02f;if(TerminalReward&&terminal)reward+=-.02f;
+  if(TerminalReward&&terminal)reward+=-.02f;
   bool valid=isfinite(reward);
   #pragma unroll
   for(int c=0;c<12;++c)valid &= isfinite(obs[c]);
@@ -132,8 +165,9 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source){
   v.task_output.reward.data[n]=reward;v.task_output.done.data[n]=terminal;v.task_output.valid.data[n]=1;++v.episodes.step(n);
   if constexpr(InlineReset)if(terminal&&!resetLane(v,in,n,source))clearOutputs(v.task_output,n);
 }
-__global__ void resetKernel(RuntimeViews v,Inputs in,ResetSource source,bool automatic){
+__global__ void resetKernel(RuntimeViews v,Inputs in,ResetSource source,bool automatic,bool query=false){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
+  if(!automatic && query && (in.selected[n] || !v.topology.active(n))){v.collisions.hit(n)=0;v.collisions.valid(n)=0;}
   if(!v.topology.active(n)){clearOutputs(v.task_output,n);v.diagnostics.status(n)=LaneStatus::Inactive;return;}
   if(automatic){if(!v.task_output.valid.data[n]||!v.task_output.done.data[n])return;}
   else {v.diagnostics.status(n)=LaneStatus::Ok;if(in.selected[n]==0)return;
@@ -145,8 +179,20 @@ TensorSpec spec(DType type,std::initializer_list<Offset> shape){TensorSpec s{typ
 std::array<TensorSpec,4> schemas(const Simulation& s){auto b=s.views().topology.batch;return {
   spec(DType::Float32,{b.environments,b.slots_per_environment,4}),spec(DType::UInt8,{b.lanes}),
   spec(DType::Float32,{25,b.lanes}),spec(DType::Float32,{b.lanes})};}
+std::array<TensorSpec,2> collisionSchemas(Offset nodes){
+  if(!nodes || nodes>16777216)throw std::invalid_argument("invalid static BVH size");
+  return {spec(DType::Float32,{nodes,10}),spec(DType::Float32,{2})};
+}
 void validate(const Simulation& s,const Bindings& b){auto expected=schemas(s);
-  if(b.inputs().size()!=4)throw std::invalid_argument("wrong task input count");
+  if(b.inputs().size()!=4 && b.inputs().size()!=6)throw std::invalid_argument("wrong task input count");
+  if(b.inputs().size()==6){
+    auto extra=collisionSchemas(b.inputs()[4].tensor.spec.shape[0]);
+    for(unsigned i=0;i<extra.size();++i){
+      auto actual=b.inputs()[4+i].tensor.spec;
+      if(actual.dtype!=extra[i].dtype||actual.rank!=extra[i].rank||actual.shape!=extra[i].shape)
+        throw std::invalid_argument("wrong collision input schema");
+    }
+  }
   for(int i=0;i<4;++i){auto actual=b.inputs()[i].tensor.spec;if(actual.dtype!=expected[i].dtype||actual.rank!=expected[i].rank||actual.shape!=expected[i].shape)throw std::invalid_argument("wrong task input schema");}}
 Inputs pointers(const std::vector<BindingRequest>& b){return {static_cast<const Scalar*>(b[0].tensor.data),static_cast<const Mask*>(b[1].tensor.data),static_cast<const Scalar*>(b[2].tensor.data),static_cast<const Scalar*>(b[3].tensor.data)};}
 void validateSource(ResetSource source){if(source!=ResetSource::Explicit&&source!=ResetSource::Random)throw std::invalid_argument("unknown reset source");}
@@ -174,23 +220,57 @@ void configureTask(Simulation& s,const std::vector<TaskConfig>& configs){
     }catch(...){cudaStreamSynchronize(stream);throw;}
   },&copies);
 }
+Bindings bindTaskInputs(Simulation& s,BindingRequest action,BindingRequest selected,BindingRequest x,BindingRequest time,
+                        std::vector<BindingRequest> collision){
+  auto shapes=schemas(s);
+  std::vector<BindingRequest> inputs{action,selected,x,time};
+  for(int i=0;i<4;++i)inputs[i].expected=shapes[i];
+  if(!collision.empty()){
+    if(collision.size()!=2)throw std::invalid_argument("incomplete collision bindings");
+    auto extra=collisionSchemas(collision[0].tensor.spec.shape[0]);
+    for(unsigned i=0;i<extra.size();++i){collision[i].expected=extra[i];inputs.push_back(collision[i]);}
+  }
+  return s.bind(std::move(inputs));
+}
 Bindings bindTaskInputs(Simulation& s,BindingRequest action,BindingRequest selected,BindingRequest x,BindingRequest time){
-  auto shapes=schemas(s);std::vector<BindingRequest> inputs{action,selected,x,time};for(int i=0;i<4;++i)inputs[i].expected=shapes[i];return s.bind(std::move(inputs));}
+  return bindTaskInputs(s,action,selected,x,time,{});
+}
 namespace {
 struct EnvironmentContext {ResetSource source;TaskExecution execution;};
+template<bool InlineReset,bool TerminalReward>
+void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,unsigned blocks,unsigned threads,cudaStream_t stream){
+  if(scene.nodes)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
+  else taskKernel<InlineReset,TerminalReward,false><<<blocks,threads,0,stream>>>(v,in,source,scene);
+}
 void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
   auto ctx=*static_cast<EnvironmentContext*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
-  if(ctx.execution==TaskExecution::FirstLaneReset){
-    prepareActions<<<1,1,0,stream>>>(v,in);detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
-    taskKernel<true><<<1,1,0,stream>>>(v,in,ctx.source);return;
+  bool first=ctx.execution==TaskExecution::FirstLaneReset;
+  if(first){
+    prepareActions<<<1,1,0,stream>>>(v,in);
+    detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
+  }else{
+    prepareActions<<<blocks,128,0,stream>>>(v,in);
+    detail::launchDynamics(v,stream,v.task_output.valid.data);
   }
-  prepareActions<<<blocks,128,0,stream>>>(v,in);detail::launchDynamics(v,stream,v.task_output.valid.data);
-  if(ctx.execution==TaskExecution::FusedReset)taskKernel<true><<<blocks,128,0,stream>>>(v,in,ctx.source);
-  else if(ctx.execution==TaskExecution::NoReset)taskKernel<false,false><<<blocks,128,0,stream>>>(v,in,ctx.source);
-  else {taskKernel<false><<<blocks,128,0,stream>>>(v,in,ctx.source);resetKernel<<<blocks,128,0,stream>>>(v,in,ctx.source,true);}
+  unsigned threads=first?1:128;
+  if(first)blocks=1;
+  StaticScene scene{};
+  if(b.size()==6){
+    const auto& nodes=b[4].tensor;
+    scene={static_cast<const float*>(nodes.data),static_cast<Index>(nodes.spec.shape[0]),
+           static_cast<const float*>(b[5].tensor.data)};
+  }
+  if(first||ctx.execution==TaskExecution::FusedReset)
+    launchTask<true,true>(v,in,ctx.source,scene,blocks,threads,stream);
+  else if(ctx.execution==TaskExecution::NoReset)
+    launchTask<false,false>(v,in,ctx.source,scene,blocks,threads,stream);
+  else{
+    launchTask<false,true>(v,in,ctx.source,scene,blocks,threads,stream);
+    resetKernel<<<blocks,threads,0,stream>>>(v,in,ctx.source,true);
+  }
 }
 void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
-  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false);
+  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false,b.size()==6);
 }
 void validateExecution(TaskExecution execution){if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset)throw std::invalid_argument("unknown task execution");}
 }

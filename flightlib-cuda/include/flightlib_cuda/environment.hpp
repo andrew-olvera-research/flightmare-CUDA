@@ -18,6 +18,11 @@ enum class TaskExecution { FusedReset, SeparateReset, NoReset, FirstLaneReset };
 // Explicit automatic reset requires selected=1 for every terminal lane.
 Bindings bindTaskInputs(Simulation&,BindingRequest action,BindingRequest selected,
                         BindingRequest reset_x,BindingRequest reset_time);
+// Optional static scene tensors are a preorder BVH [B,10] and [radius,terminate].
+// Geometry and options are fixed at setup. Results live in RuntimeViews::collisions.
+Bindings bindTaskInputs(Simulation&,BindingRequest action,BindingRequest selected,
+                        BindingRequest reset_x,BindingRequest reset_time,
+                        std::vector<BindingRequest> collision);
 void resetEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Explicit);
 // Three launches by default, four for the reference split T/R path. No host decisions.
 void stepEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Random,

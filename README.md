@@ -13,6 +13,9 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
   integration, world bounds and separately callable core mathematical helpers.
 - Environment observations, rewards, terminal decisions, device random resets,
   partial reset, scalar stepping and vector autoreset.
+- Optional static collision queries in the task kernel, with a shared room and
+  seven-gate Split-S fixture for headless collection, Isaac USD and Unity.
+  See [course assets, collision semantics and validation](flightlib-cuda/docs/cuda11-static-collision.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,
@@ -20,10 +23,9 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
 - Local validation, frozen CPU oracle, numerical qualification and Nsight gates
   for transfers, allocations and launch counts. No cloud CI is required.
 
-This is the completed **scoped headless rewrite**, not a replacement for Unity
-rendering, sensors, scene collision geometry, ROS/PX4 or every legacy RL framework.
-Those upstream components remain in the repository but are not GPU-accelerated by
-this package. CPU/GPU random sequences and TensorFlow checkpoints are not identical.
+The CUDA runtime covers headless dynamics, the quadrotor task and static box
+courses. The legacy renderer and flight software integrations have separate
+dependencies. CPU/GPU random sequences and TensorFlow checkpoints differ.
 See the [capability mapping](flightlib-cuda/docs/cuda9-usage-contract.md),
 [core API](flightlib-cuda/docs/core-api.md) and
 [numerical qualification](flightlib-cuda/docs/cuda9-validation.md).

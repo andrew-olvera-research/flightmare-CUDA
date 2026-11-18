@@ -181,7 +181,8 @@ class Core(_Resident):
 
 class Environment(_Resident):
     def __init__(self, environments, slots=1, control_dt=.01, device=0, seed=0,
-                 models=None, model_ids=None, active=None, bounds=None, legacy=False):
+                 models=None, model_ids=None, active=None, bounds=None, legacy=False,
+                 scene=None, collision_radius=.15, terminate_on_collision=False):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -199,6 +200,16 @@ class Environment(_Resident):
             state = torch.zeros((25, n), dtype=torch.float32, device=self.device)
             state[3].fill_(1)
             time = torch.zeros(n, dtype=torch.float32, device=self.device)
+        self._scene_bindings = ()
+        self.collision_hit = self.collision_valid = None
+        if scene is not None:
+            from .scene import bind_scene
+            self._scene_bindings = bind_scene(scene, collision_radius, terminate_on_collision, self.device)
+            self.collision_hit, self.collision_valid = (
+                torch.utils.dlpack.from_dlpack(self._native.tensor('collisions.' + name))
+                for name in ('hit', 'valid'))
+        elif terminate_on_collision:
+            raise ValueError("collision termination requires a scene")
         self.bind(actions, selected, state, time)
         self.outputs = {name: torch.utils.dlpack.from_dlpack(self._native.tensor('task_output.' + name))
                         for name in ('observation', 'transition_observation', 'reward', 'done', 'valid')}
@@ -222,7 +233,7 @@ class Environment(_Resident):
             native_actions = actions.view(self.environments, 1, 4)
         else:
             native_actions = actions
-        self._native.bind(native_actions, selected, reset_state, reset_time)
+        self._native.bind(native_actions, selected, reset_state, reset_time, self._scene_bindings)
         self.actions, self.selected, self.reset_state, self.reset_time = actions, selected, reset_state, reset_time
 
     def reset(self, random=False, stream=None):
