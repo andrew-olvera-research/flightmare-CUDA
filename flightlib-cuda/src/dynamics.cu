@@ -1,12 +1,14 @@
 #include "flightlib_cuda/dynamics.hpp"
 #include "dynamics_launch.hpp"
 #include "dynamics_math.cuh"
+#include "swept_collision.cuh"
 namespace flightlib_cuda::v1 {
 namespace {
 using detail::derivative;
-template<bool CheckCommand>
+template<bool CheckCommand,bool Query=false>
 __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyView topo,
-                              QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status,const Mask* enabled){
+                              QuadModelView m,StepSchedule schedule,Vector<LaneStatus> status,const Mask* enabled,
+                              detail::StaticScene scene={},CollisionFlags flags={}){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;
   if(n>=topo.batch.lanes)return;
   if(enabled&&!enabled[n])return;
@@ -23,6 +25,14 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   for(int c=0;c<4;++c){command[c]=cmd.payload(c,n);valid &= isfinite(command[c]);omega[c]=state.motor_omega(c,n);thrust[c]=state.motor_thrust(c,n);}
   if(!valid){status(n)=LaneStatus::InvalidCommand;return;}
   float old[3]={x[0],x[1],x[2]},j[3],ji[3];
+  Mask queryValid=1;
+  bool hit=false;
+  double clearance=0;
+  if constexpr(Query){
+    auto initial=detail::startClearance(scene,old,queryValid);
+    hit=initial.hit;
+    clearance=initial.travel;
+  }
   #pragma unroll
   for(int c=0;c<3;++c){j[c]=m.inertia(c,p);ji[c]=m.inverse_inertia(c,p);}
   for(Offset s=0;s<schedule.substep_dt.size();++s){
@@ -58,13 +68,22 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
     #pragma unroll
     for(int c=0;c<13;++c){sum[c]+=dt*slope[c]*(2.0f/6);tmp[c]=x[c]+dt*slope[c];}
     derivative(tmp,x+13,x+16,j,ji,slope);
+    float start[3]={x[0],x[1],x[2]};
     #pragma unroll
     for(int c=0;c<13;++c)x[c]+=sum[c]+dt*slope[c]*(1.0f/6);
+    if constexpr(Query){
+      if(!hit && queryValid){
+        detail::Arc arc[3];
+        for(int c=0;c<3;++c)arc[c]={start[c],x[c],.5*double(dt)*dt*x[13+c]};
+        if(!detail::insideClearance(arc,old,clearance))hit=detail::sweptOverlap(scene,arc,queryValid);
+      }
+    }
     // CPU normalizes the old quaternion then overwrites it with next_state.
   }
   // Detect failure before world-box clamps can conceal nonfinite intermediates.
   #pragma unroll
   for(int c=0;c<25;++c)if(!isfinite(x[c])){status(n)=LaneStatus::NumericalFailure;return;}
+  float beforeBounds[3]={x[0],x[1],x[2]};
   detail::constrain(x,old,topo,n);
   float time=state.time(n)+schedule.control_dt;valid=isfinite(time);
   #pragma unroll
@@ -72,6 +91,17 @@ __global__ void dynamicsKernel(QuadState state,CommandStorage cmd,QuadTopologyVi
   #pragma unroll
   for(int c=0;c<4;++c)valid &= isfinite(omega[c])&&isfinite(thrust[c]);
   if(!valid){status(n)=LaneStatus::NumericalFailure;return;}
+  if constexpr(Query){
+    // World bounds can teleport the vehicle. Test the committed point only.
+    if(!hit && queryValid && (schedule.substep_dt.size()==0 || x[0]!=beforeBounds[0] ||
+        x[1]!=beforeBounds[1] || x[2]!=beforeBounds[2])){
+      detail::Arc point[3];
+      for(int c=0;c<3;++c)point[c]={x[c],x[c],0};
+      if(!detail::insideClearance(point,old,clearance))hit=detail::sweptOverlap(scene,point,queryValid);
+    }
+    flags.hit(n)=hit;
+    flags.valid(n)=queryValid;
+  }
   #pragma unroll
   for(int c=0;c<25;++c)state.x(c,n)=x[c];
   #pragma unroll
@@ -85,6 +115,11 @@ void detail::launchDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask
 }
 void detail::launchDynamicsFirst(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled){
   dynamicsKernel<false><<<1,1,0,stream>>>(v.state,v.commands,v.topology,v.models,v.schedule,v.diagnostics.status,enabled);
+}
+void detail::launchSceneDynamics(const RuntimeViews& v,cudaStream_t stream,const Mask* enabled,StaticScene scene,bool first){
+  unsigned blocks=first?1:(Offset{v.topology.batch.lanes}+127)/128;
+  dynamicsKernel<false,true><<<blocks,first?1:128,0,stream>>>(v.state,v.commands,v.topology,
+      v.models,v.schedule,v.diagnostics.status,enabled,scene,v.collisions);
 }
 namespace {
 void dynamicsLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>&,void*){

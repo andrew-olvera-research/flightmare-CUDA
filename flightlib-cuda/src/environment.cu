@@ -102,27 +102,7 @@ __global__ void prepareActions(RuntimeViews v,Inputs in){
   v.commands.mode(n)=CommandMode::RotorThrust;v.commands.time(n)=time;
   v.episodes.command_time(n)=time;v.task_output.valid.data[n]=1;
 }
-// Preorder BVH rows: center, half extents, cos/sin yaw, escape index, leaf.
-struct StaticScene {const float* nodes; Index count; const float* options;};
-__device__ bool staticOverlap(StaticScene scene,float x,float y,float z,Mask& valid) {
-  float radius=scene.options[0];
-  for(Index i=0;i<scene.count;) {
-    const float* box=scene.nodes+Offset{i}*10;
-    float dx=x-box[0], dy=y-box[1];
-    float u=fmaxf(fabsf(box[6]*dx+box[7]*dy)-box[3],0.f);
-    float w=fmaxf(fabsf(-box[7]*dx+box[6]*dy)-box[4],0.f);
-    float h=fmaxf(fabsf(z-box[2])-box[5],0.f);
-    if(u*u+w*w+h*h<=radius*radius) {
-      if(box[9]!=0.f)return true;
-      ++i;
-    } else {
-      float escape=box[8];
-      if(!(escape>=i+1 && escape<=scene.count && truncf(escape)==escape)){valid=0;return false;}
-      i=static_cast<Index>(escape);
-    }
-  }
-  return false;
-}
+using detail::StaticScene;
 template<bool InlineReset, bool TerminalReward, bool Query>
 __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene){
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
@@ -135,12 +115,8 @@ __global__ void taskKernel(RuntimeViews v,Inputs in,ResetSource source,StaticSce
   for(int c=0;c<13;++c)x[c]=v.state.x(c,n);
   bool terminal=x[2]<=.02f;
   if constexpr(Query){
-    Mask valid=1;
-    bool hit=staticOverlap(scene,x[0],x[1],x[2],valid);
-    v.collisions.hit(n)=hit;
-    v.collisions.valid(n)=valid;
-    if(!valid){clearOutputs(v.task_output,n);return;}
-    terminal|=hit && scene.options[1]!=0.f;
+    if(!v.collisions.valid(n)){clearOutputs(v.task_output,n);return;}
+    terminal|=v.collisions.hit(n) && scene.options[1]!=0.f;
   }
   observation(x,obs);float reward=0,action_norm=0;
   #pragma unroll
@@ -245,21 +221,18 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
 void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
   auto ctx=*static_cast<EnvironmentContext*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
   bool first=ctx.execution==TaskExecution::FirstLaneReset;
-  if(first){
-    prepareActions<<<1,1,0,stream>>>(v,in);
-    detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
-  }else{
-    prepareActions<<<blocks,128,0,stream>>>(v,in);
-    detail::launchDynamics(v,stream,v.task_output.valid.data);
-  }
   unsigned threads=first?1:128;
   if(first)blocks=1;
+  prepareActions<<<blocks,threads,0,stream>>>(v,in);
   StaticScene scene{};
   if(b.size()==6){
     const auto& nodes=b[4].tensor;
     scene={static_cast<const float*>(nodes.data),static_cast<Index>(nodes.spec.shape[0]),
            static_cast<const float*>(b[5].tensor.data)};
   }
+  if(scene.nodes)detail::launchSceneDynamics(v,stream,v.task_output.valid.data,scene,first);
+  else if(first)detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
+  else detail::launchDynamics(v,stream,v.task_output.valid.data);
   if(first||ctx.execution==TaskExecution::FusedReset)
     launchTask<true,true>(v,in,ctx.source,scene,blocks,threads,stream);
   else if(ctx.execution==TaskExecution::NoReset)

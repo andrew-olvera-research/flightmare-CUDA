@@ -17,10 +17,12 @@ def main():
         reset = env.engine.reset_state
         start = torch.tensor([-5.0, -4.5, 3.6], device=env.device)
         reset[:3].copy_(start[:, None])
-        # One vehicle starts on the first gate post. After reset it rejoins the others.
-        reset[:3, 0] = torch.tensor([-0.1, -1.27, 3.48], device=env.device)
+        # Cross the first post with both control endpoints clear, then rejoin the group.
+        reset[:3, 0] = torch.tensor([-0.1, -1.60, 3.48], device=env.device)
+        reset[8, 0] = 70
         env.reset()
         reset[:3, 0].copy_(start)
+        reset[8, 0] = 0
         env.capture()
         policy = ActorCritic().to(env.device)
         rollout = Rollout(8, env, policy)

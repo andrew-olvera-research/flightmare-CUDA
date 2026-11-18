@@ -95,9 +95,8 @@ def test_collision_invalid_lane():
     assert not env.collision_hit.item() and not env.collision_valid.item()
 
 
-def test_contact_at_control_boundary(tmp_path):
-    # The vehicle crosses a thin box between control samples. Only endpoint
-    # overlap is supported, including at nonzero control dt.
+def test_crossed_thin_post(tmp_path):
+    # Both the pass-through and the endpoint contact must count.
     box = dict(name="Post", center=[0, 0, 2], size=[0.02, 0.2, 1])
     path = tmp_path / "post.flightcourse"
     path.write_text(
@@ -117,4 +116,4 @@ def test_contact_at_control_boundary(tmp_path):
     env.step()
     assert env.state[0, 0] > 0.08 and abs(env.state[0, 1]) < 0.02
     assert env.collision_valid.tolist() == [1, 1]
-    assert env.collision_hit.tolist() == [0, 1]
+    assert env.collision_hit.tolist() == [1, 1]

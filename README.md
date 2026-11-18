@@ -13,7 +13,7 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
   integration, world bounds and separately callable core mathematical helpers.
 - Environment observations, rewards, terminal decisions, device random resets,
   partial reset, scalar stepping and vector autoreset.
-- Optional static collision queries in the task kernel, with a shared room and
+- Optional continuous sphere-to-box collision queries in the dynamics kernel, with a shared room and
   seven-gate Split-S fixture for headless collection, Isaac USD and Unity.
   See [course assets, collision semantics and validation](flightlib-cuda/docs/cuda11-static-collision.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped

@@ -1,8 +1,8 @@
 # Static course collisions
 
 The installed Python package includes `room` and `split_s`. A course can serve
-every agent and environment in a batch. At the end of each control step, CUDA
-tests a sphere centered at the vehicle position against the static course.
+every agent and environment in a batch. CUDA tests the vehicle sphere along
+the entire simulated flight path during each control step.
 Custom collectors can use the two resident masks directly.
 
 ```python
@@ -20,7 +20,9 @@ valid = env.collision_valid.view(1, 1000)
 
 `flightrl_cuda.TensorEnv` accepts the same scene options. Its masks are on
 `env.engine`. The default radius is 0.15 m and termination is opt-in. On a
-terminal step, the flags and transition observation describe the pre-reset pose.
+terminal step, the flags describe contact anywhere during the completed motion.
+The transition observation contains the end-of-step pose, which may already be
+past the obstacle. Contact time and impact response are outside this query.
 The returned policy observation describes the reset pose. Inactive or failed
 dynamics lanes have zero hit and validity. Explicit reset clears both flags for
 selected lanes. As with other borrowed outputs, copy into rollout storage to
@@ -81,17 +83,44 @@ termination settings are per environment object. The flags reuse the runtime's
 two existing bytes per lane. Environment groups within one batch use one
 layout. Separate objects may select different layouts.
 
-The task kernel tests squared sphere-to-box distance at the integrated,
-world-constrained position before calculating termination. Tangency counts as
-a hit. Sampling happens once per control step. A fast vehicle can pass completely
-through a post between samples. The tests exercise this case explicitly.
-Contact response, swept queries and vehicle-to-vehicle collisions are outside
-this implementation. The stock height terminal still applies independently.
+### Frozen motion and contact semantics
+
+The dynamics kernel latches contact over every physics substep. Translational
+acceleration is constant within one RK substep. For normalized substep time
+`t` in [0, 1], the tested center is
+`p(t) = p0 + (p1 - p0)t + (a dt² / 2)t(t - 1)`.
+This interpolates both stored float32 RK positions and uses the acceleration
+of that substep. A zero-duration step tests the occupied position. A world-bound
+correction also tests its destination. The instantaneous jump and the subsequent
+episode reset have no flight path. The stock height terminal still applies.
+
+For open space the kernel computes a clearance radius at the initial position
+and bounds the entire arc inside it. Beyond that radius it traverses the shared
+BVH with conservative arc bounds. In each candidate box's local frame, crossings
+of the six face planes partition time into intervals. Squared distance to the
+box is quartic within each interval. The query checks the endpoints and brackets
+its interior minima using the cubic derivative. This covers the flat faces and
+rounded edges and corners of the sphere-expanded box, including tangency.
+No per-lane trajectory buffer or extra kernel launch is required.
+
+Input positions, radius and geometry use float32. Distance and time calculations
+use float64. The narrow phase includes a roundoff allowance of 64 binary64
+epsilons times the local coordinate scale. If that allowance would exceed the
+larger of 1 nm or one ten-millionth of the radius, the unresolved query and
+training transition are marked invalid. The guarantee applies to the declared
+sphere, static boxes and simulated trajectory. Other drones and individual
+rotor shapes would require additional geometry.
 
 The device tests compare graph and ordinary execution to an exhaustive NumPy
 oracle on 1,000 positions, including rotated frames, openings, wall and floor
-contacts, plus invalid lanes, resets and terminal observation ordering. The
-installed RL example collects 800 transitions and runs GAE and one PPO update.
+contacts, plus invalid lanes, resets and terminal observation ordering.
+An independent CPU oracle certifies 2,048 seeded moving trajectories at two
+spatial scales in both execution modes. It uses bounds on distance over time
+and midpoint witnesses, independent of the CUDA root solver. Regression cases
+include a curved apex with two clear endpoints, one-float-step neighbors of
+tangency, and 280 crossings of the seven actual gates from both directions at
+multiple substep phases. The installed RL example collects 800 transitions,
+including a pass through a post, and runs GAE and one PPO update.
 It exercises the training pipeline with the stock reward. Course completion and
 racing policy quality require a separate task and evaluation.
 
@@ -108,10 +137,14 @@ are excluded. Spatially dispersed agents can traverse different branches.
 
 | Agents in one environment | Headless | With Split-S |
 | ---: | ---: | ---: |
-| 1 | 11.75 | 17.72 |
-| 1,000 | 18.38 | 22.35 |
-| 65,536 | 65.36 | 75.82 |
+| 1 | 11.71 | 38.53 |
+| 1,000 | 17.70 | 46.65 |
+| 65,536 | 65.23 | 263.97 |
 
-A 20-step Nsight Systems capture with 1,000 agents showed 20 action preparation,
-20 dynamics and 20 fused task kernels, 20 graph launches and zero recorded
-memory copies or allocation calls in the measured interval.
+A separate 20-step Nsight Systems capture with 1,000 agents and 500 repeated
+gate strikes per step showed 20 action preparation, 20 dynamics and 20 task
+kernels, 20 graph launches and zero recorded memory copies or allocation calls
+in the measured interval. The dynamics kernel averaged 101 µs in that trace.
+Trajectories that repeatedly approach contact cost more than the paired hover
+benchmark. CUDA Compute Sanitizer could not initialize the WDDM debugger on
+this host. Device memory instrumentation remains unverified.

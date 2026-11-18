@@ -18,7 +18,7 @@ def _xyz(value, positive=False):
         type(x) not in (float, int)
         or not math.isfinite(x)
         or abs(x) > 1e6
-        or (positive and x <= 0)
+        or (positive and x <= 2**-149)  # half extent must survive float32 rounding
         for x in value
     ):
         raise ValueError("invalid course dimensions or coordinates")
@@ -105,8 +105,10 @@ _lock = Lock()
 
 def bind_scene(scene, radius, terminate, device):
     """Retain a single read-only traversal table per live course and CUDA device."""
-    if not math.isfinite(radius) or not 0 < radius <= 1e6:
-        raise ValueError("collision radius must be positive and finite")
+    if not math.isfinite(radius) or not 2**-150 < radius <= 1e6:
+        raise ValueError(
+            "collision radius must be positive in float32 and at most 1e6 m"
+        )
     path = (
         files(__package__).joinpath("assets", scene + ".flightcourse")
         if isinstance(scene, str) and scene in ("room", "split_s")
