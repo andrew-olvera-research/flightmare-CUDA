@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-EVIDENCE = ROOT / "flightlib-cuda/docs"
+EVIDENCE = Path(__file__).with_name("README.md")
 
 
-def table_rows(filename, heading):
+def table_rows(heading):
     """Read the published sweep so the figure and numerical tables stay together."""
-    lines = (EVIDENCE / filename).read_text(encoding="utf-8").splitlines()
+    lines = EVIDENCE.read_text(encoding="utf-8").splitlines()
     first = next(i for i, line in enumerate(lines) if line.startswith(heading))
     rows = []
     for line in lines[first + 2:]:
@@ -21,8 +21,8 @@ def table_rows(filename, heading):
 
 
 def main():
-    sweep = table_rows("cuda9-validation.md", "| Lanes | Broad sweep:")
-    grouping = table_rows("v0.1.1-scaling.md", "| E | A | GPU collection ms")
+    sweep = table_rows("| Lanes | Broad sweep:")
+    grouping = table_rows("| E | A | GPU collection ms")
     fig, (scale, groups) = plt.subplots(1, 2, figsize=(10, 4.1), layout="constrained")
     x = np.arange(len(sweep))
     for col, shift, label, color in [(2, -.19, "Collection", "#137168"), (4, .19, "Full PPO", "#334e86")]:

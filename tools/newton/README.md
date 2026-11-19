@@ -1,10 +1,10 @@
 # Newton tiled FPV cameras
 
-The optional renderer uses one shared static scene, one aircraft and camera per environment, and one shared pinhole ray table. Flightlib owns dynamics, collision queries and episode resets. Newton 1.6.1 renders the gate and room boxes with a directional light and shadows. The full-resolution packed color and optional forward depth stay on the device. This fixture tests timing and geometry. Photometric equivalence to an FPV camera or Isaac remains unqualified.
+The optional renderer uses one shared static scene, one aircraft and camera per environment, and one shared pinhole ray table. Flightlib owns dynamics, collision queries and episode resets. Newton 1.6.1 renders the gate and room boxes with a directional light and shadows. The full-resolution packed color and optional forward depth stay on the device. This fixture tests timing and geometry.
 
 ## Run in the GPU dev container
 
-Follow the [headless install](../../README.md#build-and-run-your-first-batch). Then run these commands inside the dev container:
+Follow the [headless install](../../README.md#install). Then run these commands inside the dev container:
 
 ```sh
 PY=/build/flightlib-cuda-python/bin/python
