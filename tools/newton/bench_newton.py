@@ -22,6 +22,10 @@ def benchmark(count, args):
     )
     try:
         camera = TiledCamera(count)
+        if args.pixel_priority:
+            camera.camera.default_render_config.render_order = (
+                camera.camera.RenderOrder.PIXEL_PRIORITY
+            )
         tick = 1  # the common racing fixture already consumed its forced-crossing tick
 
         def step(action):
@@ -77,6 +81,7 @@ def benchmark(count, args):
             renderer="Newton SensorTiledCamera",
             resolution=[256, 192],
             mode=args.mode,
+            render_order=camera.camera.default_render_config.render_order.name,
             pose_host_bytes=world.channel.stats["host_bytes"] if world.channel else 0,
         )
         return result
@@ -94,6 +99,11 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="profile only warmed graph replays with fixed device actions",
+    )
+    parser.add_argument(
+        "--pixel-priority",
+        action="store_true",
+        help="use baseline cross-view pixel traversal for A/B comparisons",
     )
     args = parser.parse_args()
     with torch.cuda.stream(torch.cuda.Stream()):

@@ -54,7 +54,9 @@ def test_view_swap(device):
     boxes = load_boxes(
         files("flightlib_cuda").joinpath("assets/split_s.flightcourse").read_bytes()
     )
-    camera = TiledCamera(3, 48, 32, device=device, depth=True)
+    # Exercise padded tiles at both image edges.
+    width, height = 49, 33
+    camera = TiledCamera(3, width, height, device=device, depth=True)
     poses = torch.tensor(
         [
             [-0.9, -4.27, 3.48, 0.5**0.5, 0, 0, 0.5**0.5],
@@ -63,7 +65,9 @@ def test_view_swap(device):
         ]
     )
     poses[:, 3:] /= poses[:, 3:].norm(dim=1, keepdim=True)
-    expected = np.stack([expected_depth(boxes, p.numpy(), 48, 32) for p in poses])
+    expected = np.stack(
+        [expected_depth(boxes, p.numpy(), width, height) for p in poses]
+    )
     poses = poses.to(device)
     reference = camera.draw(poses).clone()
     assert reference.flatten(1).float().std(1).min() > 1

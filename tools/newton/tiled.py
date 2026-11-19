@@ -107,6 +107,13 @@ class TiledCamera:
             model = builder.finalize(device=self.device)
             self.state = model.state()
             self.camera = SensorTiledCamera(model)
+            # Group adjacent rays from one FPV image so a warp writes nearby
+            # pixels and traverses similar parts of the scene across its rays.
+            if count > 1:
+                config = self.camera.default_render_config
+                config.render_order = SensorTiledCamera.RenderOrder.TILED
+                config.tile_width = 16
+                config.tile_height = 8
             self.camera.default_render_config.enable_shadows = True
             self.camera.utils.create_default_light()
             fov = 2 * math.atan(height / (2 * width * 0.625))
