@@ -16,6 +16,7 @@ Measured on an RTX 5070 Ti with a Ryzen 7 9800X3D. Each transition advances one 
 | --- | --- |
 | Split-S, state observations and course collisions, 131,072 aircraft | **53.33 million transitions/s** on CUDA versus **4.31 million/s** on 16 CPU threads. Including PPO updates on the same GPU, **8.07 million/s** versus **2.75 million/s**. |
 | Independent dynamics, 1,000 aircraft | **5.90 million transitions/s** in one world versus **5.89 million/s** in 1,000 worlds, including policy collection. Peer interactions add work within a world. |
+| One formation of 1,000 aircraft, course and peer collision queries | **53× real time** for physics and contact detection. Each completed step advanced the whole formation by 10 ms, with 250 candidate pairs in this formation. [Measured workload](https://github.com/andrew-olvera-research/flightmare-CUDA/blob/v0.2.0/flightlib-cuda/docs/cuda12-swarm-collision.md#qualification) |
 | Split-S, 256 independent 256×192 RGB cameras | **83,037 image-conditioned transitions/s** in warmed collection with tiled rendering. |
 
 ![Measured CUDA and CPU scaling and the effect of environment grouping](docs/figures/headless-scaling.png)
