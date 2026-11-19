@@ -19,5 +19,19 @@ services:
       - .:/workspace
       - build:/build
 
+  ros2:
+    profiles: ["ros2"]
+    image: ros:jazzy-ros-base
+    gpus: all
+    init: true
+    working_dir: /workspace
+    environment:
+      PYTHONPATH: /build/flightlib-cuda-python-native/python:/build/newton-renderer
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+    volumes:
+      - .:/workspace
+      - build:/build
+    command: ["/build/flightlib-cuda-python/bin/python", "-m", "flightlib_cuda.ros2"]
+
 volumes:
   build:

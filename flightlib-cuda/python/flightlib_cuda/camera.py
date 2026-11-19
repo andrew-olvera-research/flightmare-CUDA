@@ -10,6 +10,8 @@ import warp as wp
 
 from flightlib_cuda.scene import load_scene
 
+_FORWARD_OFFSET_M = wp.constant(0.16)
+
 
 @wp.kernel
 def _camera_poses(
@@ -29,7 +31,9 @@ def _camera_poses(
         position = wp.vec3(0.0)
         q = wp.quat_identity()
     # Optical -Z forward, +Y up, mounted on a +X forward, +Z up body.
-    mount = wp.transform(wp.vec3(0.16, 0.0, 0.0), wp.quat(0.5, -0.5, -0.5, 0.5))
+    mount = wp.transform(
+        wp.vec3(_FORWARD_OFFSET_M, 0.0, 0.0), wp.quat(0.5, -0.5, -0.5, 0.5)
+    )
     camera[i, 0] = wp.transform(position, q) * mount
 
 
@@ -72,6 +76,8 @@ class Exposure:
 
 
 class TiledCamera:
+    forward_offset_m = _FORWARD_OFFSET_M
+
     def __init__(
         self,
         count,
@@ -114,7 +120,8 @@ class TiledCamera:
                 config.tile_height = 8
             self.camera.default_render_config.enable_shadows = True
             self.camera.utils.create_default_light()
-            fov = 2 * math.atan(height / (2 * width * 0.625))
+            self.focal_px = width * 0.625
+            fov = 2 * math.atan(height / (2 * self.focal_px))
             self.base_rays = self.camera.utils.compute_camera_rays_pinhole(
                 width, height, camera_fovs=[fov]
             )

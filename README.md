@@ -28,6 +28,8 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
   Load Unity scenes, prefabs or OpenUSD stages once and pass the environment's
   scene to the Newton camera. See [asset support and camera setup](tools/newton/README.md#using-authored-scenes).
   The [Isaac Sim benchmark](flightlib-cuda/docs/cuda15-isaac.md) remains available for historical comparisons.
+- A single-aircraft ROS 2 Jazzy bridge publishes simulation time, raw IMU, optional RGB,
+  camera calibration and static sensor mounts. See the [bridge setup and wire tests](tools/ros2/README.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,
