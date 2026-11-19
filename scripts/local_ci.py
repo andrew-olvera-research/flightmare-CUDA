@@ -117,7 +117,7 @@ class Runner:
 
 
 def execute(profile, runner):
-    arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', '120-real')
+    arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
     cuda_options = [f'-DCMAKE_CUDA_ARCHITECTURES={arch}']
     if profile in ('fast', 'verify'):
         runner.run('harness', [sys.executable, '-m', 'unittest', 'discover',
@@ -285,7 +285,7 @@ def main():
                               ('device', ['nvidia-smi', '--query-gpu=name,uuid,driver_version',
                                           '--format=csv'])]:
             report[name] = capture(command)
-        report['cuda_architectures'] = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', '120-real')
+        report['cuda_architectures'] = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
         report['container_hostname'] = capture(['hostname'])
         execute('verify' if args.profile == 'release' else args.profile, runner)
         if fingerprint() != report['source_fingerprint']:

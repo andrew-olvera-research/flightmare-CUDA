@@ -14,7 +14,7 @@ services:
       FLIGHTMARE_PATH: /workspace
       PYTHONPATH: /build/flightlib
       CCACHE_DIR: /build/ccache
-      FLIGHTMARE_CUDA_ARCHITECTURES: "${FLIGHTMARE_CUDA_ARCHITECTURES:-120-real}"
+      FLIGHTMARE_CUDA_ARCHITECTURES: "${FLIGHTMARE_CUDA_ARCHITECTURES:-native}"
     volumes:
       - .:/workspace
       - build:/build

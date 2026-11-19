@@ -4,12 +4,12 @@ The optional renderer uses one shared static scene, one aircraft and camera per 
 
 ## Run in the GPU dev container
 
-Build the Flightlib CUDA Python extension from this checkout. In the dev container with the native Python build available:
+Follow the [headless install](../../README.md#build-and-run-your-first-batch). Then run these commands inside the dev container:
 
 ```sh
 PY=/build/flightlib-cuda-python/bin/python
 $PY -m pip install --target /build/newton-renderer --no-deps newton==1.6.1 warp-lang==1.19.0
-export PYTHONPATH=/build/newton-renderer:/build/flightlib-cuda-python-native/python
+export PYTHONPATH=/build/newton-renderer
 $PY -m pytest -q tools/newton/test_tiled.py
 for n in 1 32 128 256; do
   $PY tools/newton/bench_newton.py --envs "$n" --mode graph

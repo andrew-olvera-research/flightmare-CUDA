@@ -13,23 +13,31 @@ git clone --branch main https://github.com/andrew-olvera-research/flightmare-CUD
 cd flightmare-CUDA
 ```
 
-Start from the repository root with Docker Compose and an NVIDIA GPU accessible to Linux containers. The development image supplies CUDA and the C++ build tools. The reference machine uses an RTX 5070 Ti. For a different GPU, set `FLIGHTMARE_CUDA_ARCHITECTURES=native` in the root `.env` before starting Compose.
+Start from the repository root with Docker Compose and an NVIDIA GPU accessible to Linux containers. The development image supplies CUDA and the C++ build tools. The tested stack is Linux x86-64 (Ubuntu 24.04), Python 3.12, CUDA Toolkit 13.3 and PyTorch 2.9.1+cu130 on an RTX 5070 Ti with driver 610.88. Compose targets the GPU visible during the build by default.
 
 ```sh
 docker compose up -d --build dev
-docker compose exec -T dev bash scripts/setup-cuda-python.sh
-docker compose exec -T dev python3 scripts/local_ci.py verify
+docker compose exec -T dev bash scripts/install-headless.sh --with-rl
+docker compose exec -T dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.custom_collector
 ```
 
-The last command builds the CPU reference and CUDA packages, compares their trajectories and runs examples from a fresh install. To keep the packages available for your own scripts inside the dev container, run
-
-```sh
-docker compose exec -T dev cmake --install /build/flightlib-cuda-python-native --prefix /build/flightmare-install
-docker compose exec -T dev /build/flightlib-cuda-python/bin/pip install --no-deps --no-build-isolation ./flightrl-cuda
-docker compose exec -T -e PYTHONPATH=/build/flightmare-install dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.custom_collector
-```
+Omit `--with-rl` for the standalone simulator. The installer puts Python modules and the CMake package in the persistent `/build/flightlib-cuda-python` environment. Use its Python for downstream scripts, or pass `-DCMAKE_PREFIX_PATH=/build/flightlib-cuda-python` to a C++ consumer. The full CPU/CUDA parity suite is available separately through the [maintainer validation guide](docs/local-development.md).
 
 The example prints `Collected 24 valid transitions, including a same-step reset.` It runs a PyTorch policy on six agents and retains both the terminal observation and the next policy input. [Collector source](flightrl-cuda/flightrl_cuda/custom_collector.py)
+
+### CUDA driver and GPU targets
+
+Use an NVIDIA host driver that supports your GPU and the CUDA 13.3 container. Check the driver and compute capability with `nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv`. The reference machine reports `610.88, 12.0`. NVIDIA lists R580 as the floor for limited CUDA 13.x minor-version compatibility and 610.43.02 as the Linux driver shipped with Toolkit 13.3 Update 1. Older drivers can have PTX JIT or feature restrictions. This release was runtime-qualified on driver 610.88 and SM 120. [NVIDIA release notes](https://docs.nvidia.com/cuda/archive/13.3.1/cuda-toolkit-release-notes/index.html) · [Driver compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/latest/minor-version-compatibility.html)
+
+For a local source install, leave the architecture at `native`. For a build machine targeting several GPU models, set the following in the root `.env` **before** starting Compose and rerun the installer. The same setting reaches the simulator and optional RL kernels.
+
+```dotenv
+FLIGHTMARE_CUDA_ARCHITECTURES=86-real;89-real;120-real
+```
+
+This embeds native machine code for SM 86, 89 and 120 in each library. A single target such as `89-real` reduces compile time and binary size. CMake's `-virtual` suffix emits PTX for driver JIT. Check `nvcc --list-gpu-code` inside the dev container for compiler targets. PyTorch and optional renderers have their own device requirements, including hardware support for workloads that use BF16. The setting controls Flightmare's compiled CUDA code. [CMake architecture selection](https://cmake.org/cmake/help/latest/prop_tgt/CUDA_ARCHITECTURES.html)
+
+The installer builds in CMake Release mode. On the reference build, nvcc uses `-O3 -DNDEBUG` and the parity-sensitive dynamics, task, helper and RL translation units disable fused multiply-add contraction. Published profiling covers kernel resources, launch and copy counts, and end-to-end workloads on SM 120. Other architectures need their own parity and performance runs before claiming those results. [Dynamics experiments](flightlib-cuda/docs/cuda4-performance.md) · [Kernel profiling](flightlib-cuda/docs/kernel-diagnostic-findings.md) · [Camera tile and block-size tests](tools/newton/README.md)
 
 ## Choose an interface
 
@@ -46,6 +54,8 @@ The example prints `Collected 24 valid transitions, including a same-step reset.
 A batch has `environments × slots` agents. Slots in one environment can interact when agent collisions are enabled. Simulation outputs borrow device storage that the next step can overwrite. Copy observations into your rollout buffer if you need them for a later update. [Tensor layouts and ownership](flightlib-cuda/python/README.md)
 
 For state-based robustness experiments, transform the borrowed observation into a separate policy input on the caller's CUDA stream. Apply your own bias, noise or delayed-observation model there to preserve ground truth for rewards and estimator scoring. When a consumer needs sampling times, mounts, dropout and delivery delay, use the scheduled sensor packets. Cameras produce RGB and optional forward depth from the same scene. [Sensor example](flightrl-cuda/flightrl_cuda/sensor_example.py) · [Camera graph example](tools/newton/README.md#capture-and-replay)
+
+For the separately pinned Isaac Sim 6.2 visual adapter and its Windows RTX qualification, see the [Isaac setup and platform limits](flightlib-cuda/docs/cuda15-isaac.md). The Newton guide above covers the supported Unity and OpenUSD asset subsets.
 
 ## What parity covers
 

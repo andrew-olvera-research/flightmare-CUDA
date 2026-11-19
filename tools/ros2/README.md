@@ -8,7 +8,7 @@ Build the CUDA Python environment once in the dev service. The ROS service uses 
 
 ```sh
 docker compose up -d dev
-docker compose exec -T dev bash scripts/setup-cuda-python.sh
+docker compose exec -T dev bash scripts/install-headless.sh
 docker compose --profile ros2 up ros2
 ```
 

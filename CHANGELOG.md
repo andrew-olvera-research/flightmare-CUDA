@@ -2,6 +2,7 @@
 
 ## 0.2.0 — Collision queries, FPV rendering and flight software validation
 
+- Provide a single Compose installer for the CUDA simulator and optional RL package, with Python and CMake consumers using the same environment.
 - Add shared box courses, continuous static and inter-agent collision queries, and a Split-S fixture. Load supported Unity and OpenUSD geometry for both contact queries and cameras.
 - Add resident collective-thrust/body-rate actions with per-plant tuning. A caller-owned CUDA graph can span policy evaluation, stepping and masked reset.
 - Add scheduled IMU and odometry packets, bounded pose and sensor subscriptions, and in-process tiled Newton FPV rendering.
