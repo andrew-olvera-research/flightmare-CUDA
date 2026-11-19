@@ -39,6 +39,7 @@ Use a single producer on the simulation stream. Only `bridge.step()` advances th
 | Topic | Messages and timing |
 | --- | --- |
 | `/clock` | One `rosgraph_msgs/Clock` per completed simulation tick. Integer nanoseconds start one control period after zero. Reliable, depth 10. |
+| `barometer/pressure` | Optional `sensor_msgs/FluidPressure` in Pa, stamped at acquisition in `barometer_link`. Enable with `SingleAgentBridge(node, barometer=BarometerConfig(...))`. |
 | `imu/data_raw` | One `sensor_msgs/Imu` per valid delivered sample. Header uses the **acquisition** time, including when several samples arrive in a later tick. Gyro XYZ in rad/s and specific force XYZ in m/s² are expressed in `imu_link`. Orientation covariance starts with -1 to indicate an unavailable orientation estimate. Zero gyro/acceleration covariance means unknown. |
 | `camera/image_raw`, `camera/camera_info` | One matching `rgb8` image and ideal pinhole calibration per valid requested exposure, every N ticks. Both headers carry the pose acquisition stamp and `camera_optical_frame`. No distortion. |
 | `/tf_static` | Sensor mounts relative to `base_link` (forward, left, up). The IMU is at the body origin with its configured sensor-to-body rotation. The FPV camera is 0.16 m forward; optical X points right, Y down, Z forward. |

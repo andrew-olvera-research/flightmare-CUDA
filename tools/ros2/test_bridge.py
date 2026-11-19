@@ -11,10 +11,10 @@ rclpy = pytest.importorskip("rclpy")
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import CameraInfo, Image, Imu
+from sensor_msgs.msg import CameraInfo, FluidPressure, Image, Imu
 from tf2_msgs.msg import TFMessage
 
-from flightlib_cuda import ImuConfig
+from flightlib_cuda import BarometerConfig, ImuConfig
 from flightlib_cuda.ros2 import SingleAgentBridge
 
 
@@ -58,6 +58,7 @@ def test_wire_timing_and_frames(tmp_path, camera):
         scene=scene,
         camera_every=2 if camera else None,
         camera_size=(64, 48),
+        barometer=BarometerConfig(latency_s=0.003, noise_std_pa=1.2),
         imu=ImuConfig(
             rate_hz=200,
             latency_s=0.003,
@@ -66,12 +67,14 @@ def test_wire_timing_and_frames(tmp_path, camera):
         ),
     )
     try:
+        pressures = []
         clocks, imus, images, infos, mounts = [], [], [], [], []
         reliable = QoSProfile(depth=500)
         sensor = QoSProfile(depth=500, reliability=ReliabilityPolicy.BEST_EFFORT)
         tf = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         watch = [
             (Clock, "/clock", clocks, reliable),
+            (FluidPressure, "barometer/pressure", pressures, sensor),
             (Imu, "imu/data_raw", imus, sensor),
             (TFMessage, "/tf_static", mounts, tf),
         ]
@@ -83,7 +86,7 @@ def test_wire_timing_and_frames(tmp_path, camera):
                 ]
             )
         else:
-            assert len(bridge.env.subscriptions) == 1
+            assert len(bridge.env.subscriptions) == 2
             assert sender.count_publishers("camera/image_raw") == 0
         subs = [
             reader.create_subscription(cls, topic, buf.append, qos)
@@ -93,7 +96,7 @@ def test_wire_timing_and_frames(tmp_path, camera):
             reader,
             lambda: (
                 all(sub.get_publisher_count() for sub in subs)
-                and bridge.imu.get_subscription_count()
+                and bridge.imu.get_subscription_count() and bridge.pressure.get_subscription_count()
                 and mounts
                 and (
                     not camera
@@ -103,14 +106,19 @@ def test_wire_timing_and_frames(tmp_path, camera):
             ),
         )
         steps = 8 if camera else 104
-        for _ in range(steps):
+        expected_pressure = {}
+        for tick in range(1, steps + 1):
             bridge.step()
+            if tick % 2 == 0:
+                height = bridge.env.state[2, 0].item()
+                expected_pressure[tick * bridge.tick_ns] = 101325 * (1 - height / 44330.77) ** 5.25588
         bridge.drain()
         end = steps * 10_000_000
         until(
             reader,
             lambda: (
                 len(clocks) == steps
+                and len(pressures) == (steps - 1) // 2
                 and len(imus) == steps * 2 - 1
                 and reader.get_clock().now().nanoseconds == end
                 and (not camera or len(images) == len(infos) == steps // 2)
@@ -122,6 +130,10 @@ def test_wire_timing_and_frames(tmp_path, camera):
         assert [ns(m.header.stamp) for m in imus] == list(
             range(5_000_000, end, 5_000_000)
         )
+        assert [ns(p.header.stamp) for p in pressures] == list(range(20_000_000, end, 20_000_000))
+        for p in pressures:
+            assert p.header.frame_id == "barometer_link" and p.variance == pytest.approx(1.44)
+            assert abs(p.fluid_pressure - expected_pressure[ns(p.header.stamp)]) < 5 * 1.2
         for imu in imus:
             assert (
                 imu.header.frame_id == "imu_link"

@@ -31,7 +31,7 @@ class TensorEnv:
 
     def __init__(self, config=None, *, random_reset=True, auto_reset=True,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
-                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None, subscriptions=()):
+                 agent_collisions=False, candidate_capacity=None, imu=None, odometry=None, subscriptions=(), barometer=None):
         self._config = (config or Config()).copy()
         c = self.config
         self.num_envs, self.device = c.num_envs*c.slots, torch.device('cuda', c.device)
@@ -39,8 +39,9 @@ class TensorEnv:
                                   seed=c.seed, models=[c.model], scene=scene,
                                   collision_radius=collision_radius, terminate_on_collision=terminate_on_collision,
                                   agent_collisions=agent_collisions, candidate_capacity=candidate_capacity,
-                                  imu=imu, odometry=odometry, subscriptions=subscriptions)
+                                  imu=imu, odometry=odometry, subscriptions=subscriptions, barometer=barometer)
         self.subscriptions = self.engine.subscriptions
+        self.barometer = self.engine.barometer
         self.imu, self.odometry = self.engine.imu, self.engine.odometry
         self.engine.configure_task(c.task())
         self.random_reset, self._auto_reset = random_reset, bool(auto_reset)

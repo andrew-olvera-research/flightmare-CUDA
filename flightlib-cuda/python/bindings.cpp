@@ -111,6 +111,8 @@ SensorSettings sensorSettings(py::dict d){
   s.dropout=d["dropout"].cast<float>();components(d,"mount",s.mount);components(d,"offset",s.offset);
   components(d,"noise",s.noise);components(d,"bias",s.bias);components(d,"walk",s.walk);
   components(d,"limit",s.limit);components(d,"attitude_std",s.attitude_std);
+  if(d.contains("sea_level_pa"))s.sea_level_pa=d["sea_level_pa"].cast<float>();
+  if(d.contains("origin_altitude_m"))s.origin_altitude_m=d["origin_altitude_m"].cast<float>();
   components(d,"increment_width",s.increment_width);
   return s;
 }
@@ -125,12 +127,13 @@ struct NativeEnvironment {
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
                     const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
                     const std::vector<Mask>& active,const std::vector<float>& bounds,Index capacity=0,float radius=0,bool terminate=false,
-                    py::dict imu={},py::dict odometry={}):sim([&]{
+                    py::dict imu={},py::dict odometry={},py::dict barometer={}):sim([&]{
     auto schedule=prepareSchedule(dt);
     RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=schedule.size();c.device=device;c.seed=seed;
     c.imu=sensorSettings(imu);c.odometry=sensorSettings(odometry);
-    validateSensorPeriods(schedule,c.imu,c.odometry);
-    if(c.imu.period_ns||c.odometry.period_ns)c.sensor_step_ns=std::llround(double(dt)*1e9);
+    c.barometer=sensorSettings(barometer);
+    validateSensorPeriods(schedule,c.imu,c.odometry,c.barometer);
+    if(c.imu.period_ns||c.odometry.period_ns||c.barometer.period_ns)c.sensor_step_ns=std::llround(double(dt)*1e9);
     c.candidates_per_environment=capacity;c.agent_collision_radius=radius;c.terminate_on_agent_collision=terminate;return c;}()){
     configure(sim,models,ids,active,bounds,dt);
     std::vector<TaskConfig> tasks;for(auto id:ids)tasks.push_back(legacyTaskConfig(models.at(id).mass));configureTask(sim,tasks);
@@ -250,6 +253,7 @@ PYBIND11_MODULE(_native,m){
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&>())
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool>())
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict>())
+    .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict,py::dict>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
     .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)
@@ -264,7 +268,7 @@ PYBIND11_MODULE(_native,m){
     .def("synchronize",[](NativeEnvironment& e){e.sim.synchronize();})
     .def("configure_task",[](NativeEnvironment& e,const std::vector<TaskConfig>& c){configureTask(e.sim,c);})
     .def("configure",[](NativeEnvironment& e,const std::vector<ModelConfig>& m,const std::vector<Index>& ids,const std::vector<Mask>& active,const std::vector<float>& bounds,float dt){configure(e.sim,m,ids,active,bounds,dt);});
-  py::enum_<ExportKind>(m,"ExportKind").value("POSE",ExportKind::Pose).value("IMU",ExportKind::Imu).value("ODOMETRY",ExportKind::Odometry);
+  py::enum_<ExportKind>(m,"ExportKind").value("POSE",ExportKind::Pose).value("IMU",ExportKind::Imu).value("BAROMETER",ExportKind::Barometer).value("ODOMETRY",ExportKind::Odometry);
   py::class_<NativeExport>(m,"NativeExport").def(py::init<NativeEnvironment&,ExportKind,py::object,py::object,py::object>())
     .def_readonly("ready",&NativeExport::ready).def("pack",&NativeExport::pack);
 }

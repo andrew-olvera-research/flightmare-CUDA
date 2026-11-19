@@ -109,8 +109,9 @@ class Channel:
             "pose",
             "imu",
             "odometry",
+            "barometer",
         ):
-            raise ValueError("expected a pose, imu or odometry Subscription")
+            raise ValueError("expected a pose, imu, odometry or barometer Subscription")
         if (
             spec.destination not in ("device", "host")
             or type(spec.depth) is not int
@@ -156,6 +157,7 @@ class Channel:
         self.channels, self.width = {
             "pose": (7, 48),
             "imu": (6, 80),
+            "barometer": (1, 64),
             "odometry": (10, 96),
         }[self.kind]
         self.required, self.device = spec.required, env.device

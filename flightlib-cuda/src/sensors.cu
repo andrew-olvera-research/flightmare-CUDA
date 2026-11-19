@@ -27,7 +27,7 @@ __device__ float readout(std::uint64_t key, std::uint64_t seq) {
   x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
   return float((x ^ (x >> 31)) >> 40) * (1.f / 16777216.f);
 }
-template<bool Imu>
+template<int Channels>
 __device__ bool measure(SensorBuffers b, const float* x, float3 gravity,
                         Index lane, std::uint64_t episode, std::uint64_t seq,
                         float* out) {
@@ -35,7 +35,7 @@ __device__ bool measure(SensorBuffers b, const float* x, float3 gravity,
   curandStatePhilox4_32_10_t rng;
   if (cfg.stochastic) {
     auto key = cfg.seed ^ (episode * 0x9e3779b97f4a7c15ULL) ^
-               (Imu ? 0x6a09e667ULL : 0xbb67ae85ULL);
+               (Channels == 6 ? 0x6a09e667ULL : Channels == 1 ? 0x3c6ef372ULL : 0xbb67ae85ULL);
     curand_init(key, lane, seq * 64, &rng);
   }
   Quaternion body{x[3], x[4], x[5], x[6]},
@@ -47,7 +47,7 @@ __device__ bool measure(SensorBuffers b, const float* x, float3 gravity,
           float(body.z / norm)};
   Quaternion sensor = product(body, mount);
   float3 omega = make_float3(x[10], x[11], x[12]);
-  if constexpr (Imu) {
+  if constexpr (Channels == 6) {
     auto w = rotate(inverse(mount), omega);
     auto f = rotate(
       inverse(sensor),
@@ -75,6 +75,13 @@ __device__ bool measure(SensorBuffers b, const float* x, float3 gravity,
       if (cfg.limit[i] > 0)
         out[i] = fminf(cfg.limit[i], fmaxf(-cfg.limit[i], out[i]));
     }
+  } else if constexpr (Channels == 1) {
+    auto offset = rotate(body, make_float3(cfg.offset[0], cfg.offset[1], cfg.offset[2]));
+    double altitude = double(cfg.origin_altitude_m) + x[2] + offset.z;
+    if (altitude > 11000.) return false; // Tropospheric lapse-rate model.
+    out[0] = cfg.sea_level_pa * pow(1. - altitude / 44330.77, 5.25588) + cfg.bias[0];
+    if (cfg.noise[0]) out[0] += cfg.noise[0] * curand_normal(&rng);
+    if (!(out[0] > 0)) return false;
   } else {
     auto r = make_float3(cfg.offset[0], cfg.offset[1], cfg.offset[2]);
     auto p = rotate(body, r);
@@ -106,16 +113,16 @@ __device__ bool measure(SensorBuffers b, const float* x, float3 gravity,
     out[5] = sensor.y;
     out[6] = sensor.z;
   }
-  for (int i = 0; i < (Imu ? 6 : 10); ++i)
+  for (int i = 0; i < Channels; ++i)
     if (!isfinite(out[i])) return false;
   return cfg.dropout == 0 || curand_uniform(&rng) > cfg.dropout;
 }
 
-template<bool Imu>
+template<int Channels>
 __global__ void sensorStep(RuntimeViews v, SensorBuffers b, Index lanes) {
   Index n = blockIdx.x * blockDim.x + threadIdx.x;
   if (n >= lanes) return;
-  constexpr int channels = Imu ? 6 : 10;
+  constexpr int channels = Channels;
   const auto& cfg = b.settings;
   auto begin = b.state(0, n), end = begin + v.sensor_step_ns,
        episode = v.episodes.episode(n);
@@ -124,7 +131,7 @@ __global__ void sensorStep(RuntimeViews v, SensorBuffers b, Index lanes) {
     b.state(1, n) = episode;
     b.state(2, n) = begin;
     b.state(3, n) = b.state(4, n) = 0;
-    if constexpr (Imu)
+    if constexpr (Channels == 6)
       for (int c = 0; c < 6; ++c) b.drift(c, n) = 0;
   }
   b.state(0, n) = end;
@@ -152,7 +159,7 @@ __global__ void sensorStep(RuntimeViews v, SensorBuffers b, Index lanes) {
       for (int c = 0; c < 16; ++c) x[c] = v.sensor_truth.samples(s, c, n);
     Index model = v.topology.model_id(n);
     float3 gravity = make_float3(0, 0, 0);
-    if constexpr (Imu)
+    if constexpr (Channels == 6)
       if (good)
         gravity =
           make_float3(v.models.gravity(0, model), v.models.gravity(1, model),
@@ -161,7 +168,7 @@ __global__ void sensorStep(RuntimeViews v, SensorBuffers b, Index lanes) {
       auto index = produced % b.queue.shape[0];
       float value[channels] = {};
       bool valid = good && !(time == end && v.sensor_truth.corrected(n)) &&
-                   measure<Imu>(b, x, gravity, n, episode, produced + 1, value);
+                   measure<Channels>(b, x, gravity, n, episode, produced + 1, value);
       b.acquired(index, n) = time;
       b.queue_valid(index, n) = valid;
       for (int c = 0; c < channels; ++c)
@@ -195,8 +202,10 @@ void launchSensors(const RuntimeViews& v, cudaStream_t stream, bool first) {
   Index lanes = first ? 1 : v.topology.batch.lanes;
   auto blocks = (Offset{lanes} + 127) / 128;
   if (v.imu.values.data)
-    sensorStep<true><<<blocks, 128, 0, stream>>>(v, v.imu, lanes);
+    sensorStep<6><<<blocks, 128, 0, stream>>>(v, v.imu, lanes);
+  if (v.barometer.values.data)
+    sensorStep<1><<<blocks, 128, 0, stream>>>(v, v.barometer, lanes);
   if (v.odometry.values.data)
-    sensorStep<false><<<blocks, 128, 0, stream>>>(v, v.odometry, lanes);
+    sensorStep<10><<<blocks, 128, 0, stream>>>(v, v.odometry, lanes);
 }
 }  // namespace flightlib_cuda::v1::detail

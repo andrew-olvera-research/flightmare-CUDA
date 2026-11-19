@@ -44,13 +44,15 @@ def test_sensor_wire_axes_units_and_timestamp(connection):
     state = np.zeros(13)
     state[:4] = [11, 2, 3, 1]
     state[7:10] = [1, -2, 3]
-    link.send(100000, np.array([1, 2, 3, 4, 5, 6.0]), state, 25)
+    link.send(100000, np.array([1, 2, 3, 4, 5, 6.0]), state, 25, pressure_pa=95000.0)
     decoder = mav.MAVLink(None)
     packets = []
     peer.settimeout(1)
     while len(packets) < 2:
         packets.extend(decoder.parse_buffer(peer.recv(8192)) or ())
     gps, imu = packets
+    assert imu.abs_pressure == 950 and imu.fields_updated & 512
+    assert imu.pressure_alt == pytest.approx(540.34, abs=0.1)
     assert gps.time_usec == imu.time_usec == 100000
     assert [gps.vn, gps.ve, gps.vd] == [100, 200, -300]
     assert gps.alt == 491000 and gps.lat > 473977420 and gps.lon < 85455940

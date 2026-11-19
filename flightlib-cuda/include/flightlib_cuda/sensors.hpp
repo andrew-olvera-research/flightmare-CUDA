@@ -10,6 +10,7 @@ struct SensorSettings {
   // deviations.
   float noise[6]{}, bias[6]{}, walk[6]{}, limit[6]{}, increment_width[6]{},
     attitude_std[3]{};
+  float sea_level_pa{101325.f}, origin_altitude_m{};
   bool stochastic{};
 };
 struct SensorBuffers {

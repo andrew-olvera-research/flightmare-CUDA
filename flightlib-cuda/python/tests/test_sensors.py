@@ -2,7 +2,7 @@ import math
 import numpy as np
 import pytest
 import torch
-from flightlib_cuda import Environment, ImuConfig, ModelConfig, OdometryConfig
+from flightlib_cuda import BarometerConfig, Environment, ImuConfig, ModelConfig, OdometryConfig
 
 
 def hover_model():
@@ -275,3 +275,37 @@ def test_swarm_contact_preserves_delivered_terminal_pose():
     assert not env.outputs["done"].any()
     assert torch.all(env.odometry.episode[0] == episode + 1)
     assert env.odometry.values[0, :, 0].tolist() == [0, 4]
+
+
+@pytest.mark.parametrize("graph", [False, True])
+def test_barometer_pressure_offset_bias_and_latency(graph):
+    cfg = BarometerConfig(rate_hz=100, origin_altitude_m=990, offset_m=(0, 0, 1),
+                          bias_pa=7, latency_s=0.005)
+    env = Environment(2, barometer=cfg, auto_reset=False)
+    env.reset_state[2] = 9
+    # Flip the second mount's Z direction.
+    env.reset_state[3, 1] = 0
+    env.reset_state[4, 1] = 1
+    env.reset()
+    if graph:
+        env.capture(random=False)
+    env.step(graph=graph, random=False)
+    assert not env.barometer.sequence.any()
+    env.step(graph=graph, random=False)
+    p = env.barometer
+    assert p.valid[0].all() and p.acquired_ns[0].tolist() == [10_000_000] * 2
+    # At 1000 m the ISA reference pressure is 89874.6 Pa (before bias).
+    assert p.values[0, 0, 0].item() == pytest.approx(89881.6, abs=0.1)
+    assert (p.values[0, 1, 0] - p.values[0, 0, 0]).item() == pytest.approx(21.8, abs=0.1)
+
+
+def test_barometer_invalid_atmosphere():
+    for cfg in (BarometerConfig(sea_level_pa=0), BarometerConfig(origin_altitude_m=float("nan")),
+                BarometerConfig(noise_std_pa=-1)):
+        with pytest.raises(ValueError):
+            Environment(1, barometer=cfg)
+    env = Environment(1, barometer=BarometerConfig(origin_altitude_m=11500, rate_hz=100))
+    env.reset_state[2] = 1
+    env.reset()
+    env.step(random=False)
+    assert env.barometer.sequence[0, 0] == 1 and not env.barometer.valid.any()

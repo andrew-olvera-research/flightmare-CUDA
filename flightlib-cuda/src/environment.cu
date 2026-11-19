@@ -181,6 +181,7 @@ __global__ void resetKernel(RuntimeViews v,Inputs in,ResetSource source,bool aut
   Index n=blockIdx.x*blockDim.x+threadIdx.x;if(n>=v.topology.batch.lanes)return;
   if(!automatic && (in.selected[n] || !v.topology.active(n))){
     if(v.imu.values.data)clearSensorPackets(v.imu,n);
+    if(v.barometer.values.data)clearSensorPackets(v.barometer,n);
     if(v.odometry.values.data)clearSensorPackets(v.odometry,n);
   }
   if(!automatic && query && (in.selected[n] || !v.topology.active(n))){v.collisions.hit(n)=0;v.collisions.valid(n)=0;if(v.swarm.radius)v.swarm.hit(n)=0;}

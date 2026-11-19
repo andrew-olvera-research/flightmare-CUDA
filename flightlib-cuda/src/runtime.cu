@@ -162,7 +162,7 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
       (config.agent_collision_radius > 0 && K == 0))
     throw std::invalid_argument("moving spheres require a finite radius and positive candidate capacity");
   const Offset W = config.agent_collision_radius > 0 ? N : 0;
-  const Offset T = config.imu.period_ns || config.odometry.period_ns ? N : 0;
+  const Offset T = config.imu.period_ns || config.odometry.period_ns || config.barometer.period_ns ? N : 0;
   if(T && (!S || !config.sensor_step_ns))throw std::invalid_argument("sensors require positive simulation time");
   auto capacity=[&](const SensorSettings& settings,bool queue)->Offset{
     if(!settings.period_ns)return 0;
@@ -184,6 +184,10 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
     return add(span/settings.period_ns,3); // endpoint quantization and inclusive first deadline
   };
   const Offset imuPackets=capacity(config.imu,false),imuQueue=capacity(config.imu,true);
+  if (config.barometer.period_ns && (!(config.barometer.sea_level_pa > 0) ||
+      !std::isfinite(config.barometer.sea_level_pa) || !std::isfinite(config.barometer.origin_altitude_m)))
+    throw std::invalid_argument("invalid barometer atmosphere");
+  const Offset baroPackets=capacity(config.barometer,false),baroQueue=capacity(config.barometer,true);
   const Offset odomPackets=capacity(config.odometry,false),odomQueue=capacity(config.odometry,true);
   AllocationPlan result;
 #define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);
@@ -221,7 +225,8 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.sensor_step_ns=config.sensor_step_ns;
   s->views.imu.settings=config.imu;
   s->views.odometry.settings=config.odometry;
-  for(auto* cfg:{&s->views.imu.settings,&s->views.odometry.settings}){
+  s->views.barometer.settings=config.barometer;
+  for(auto* cfg:{&s->views.barometer.settings,&s->views.imu.settings,&s->views.odometry.settings}){
     cfg->stochastic=cfg->dropout>0;
     for(int i=0;i<6;++i)cfg->stochastic|=cfg->noise[i]>0 || cfg->walk[i]>0;
     for(auto a:cfg->attitude_std)cfg->stochastic|=a>0;

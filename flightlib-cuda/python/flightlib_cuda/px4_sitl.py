@@ -42,7 +42,7 @@ class Link:
     def write(self, data):
         self.sock.sendall(data)
 
-    def send(self, us, imu, state, tick):
+    def send(self, us, imu, state, tick, pressure_pa=None):
         x, y, z = state[:3]
         vn, ve, vd = state[7:10] * FRD
         if tick % 25 == 0:
@@ -64,16 +64,17 @@ class Link:
                 12,
             )
         field = body_field(state[3:7])
-        hpa = 1013.25 * (1 - (ALT + z) / 44330.0) ** 5.255
+        hpa = altitude = 0.0
         flags = 63  # XYZ accelerometer and gyro
         if tick % 5 == 0:
-            flags |= (
-                448 | 512 | 2048 | 4096
-            )  # XYZ magnetic field, pressure, altitude, temperature
+            flags |= 448 | 4096  # XYZ magnetic field and temperature
             # A stationary physical sensor still fluctuates. PX4 detects long
             # runs of identical readings as stuck measurements.
             field += self.noise.normal(0.0, 0.0005, 3)
-            hpa += self.noise.normal(0.0, 0.012)
+        if pressure_pa is not None:
+            flags |= 512 | 2048
+            hpa = pressure_pa / 100.0
+            altitude = 44330.77 * (1 - (pressure_pa / 101325.0) ** (1 / 5.25588))
         self.codec.hil_sensor_send(
             us,
             *(imu[3:] * FRD),
@@ -81,7 +82,7 @@ class Link:
             *field,
             hpa,
             0.0,
-            ALT + z,
+            altitude,
             15.0,
             flags,
         )
@@ -132,6 +133,9 @@ class SingleAgentSITL:
             raise ValueError(
                 "requires a fresh 4 ms bridge with a synchronous aligned 250 Hz IMU"
             )
+        baro = bridge.barometer_config
+        if baro is None or baro.rate_hz != 50 or baro.latency_s or baro.phase_s or baro.dropout:
+            raise ValueError("requires a synchronous 50 Hz barometer")
         self.bridge = bridge
         self.host_action = torch.empty(4, dtype=torch.float32, pin_memory=True)
         self.host_state = torch.empty(13, dtype=torch.float32, pin_memory=True)
@@ -139,9 +143,17 @@ class SingleAgentSITL:
         stamp = 0
         # The external clock must run while PX4 starts its output driver.
         state = self.bridge.env.reset_state[:13, 0].cpu().numpy()
+        # Before the first actuator ACK there is no physics tick. Seed pressure
+        # from the configured stationary launch pose during this handshake.
+        offset = np.asarray(baro._settings()["offset"])
+        xyz = state[4:7]
+        world_offset = offset + 2 * np.cross(xyz, np.cross(xyz, offset) + state[3] * offset)
+        height = baro.origin_altitude_m + state[2] + world_offset[2]
+        startup_pa = baro.sea_level_pa * (1 - height / 44330.77) ** 5.25588 + baro.bias_pa
         for tick in range(1, 3001):
             stamp += DT_US
-            self.link.send(stamp, np.array([0, 0, 0, 0, 0, 9.81]), state, tick)
+            self.link.send(stamp, np.array([0, 0, 0, 0, 0, 9.81]), state, tick,
+                           startup_pa if tick % 5 == 0 else None)
             try:
                 ack = self.link.actuator(stamp, 0.006, startup=True)
             except TimeoutError:
@@ -172,14 +184,16 @@ class SingleAgentSITL:
             sim.state[:13, 0].copy_(sim.reset_state[:13, 0])
         self.host_action.numpy()[:] = actions
         sim.actions[0, 0].copy_(self.host_action, non_blocking=True)
-        _, samples = self.bridge.step_with_imu()
+        _, (samples, pressures) = self.bridge.step_with_sensors()
         if len(samples) != 1 or samples[0][0] != tick * DT_US * 1000:
             raise RuntimeError("missing current Flightlib IMU")
         imu = np.asarray(samples[0][1])
         self.host_state.copy_(sim.state[:13, 0])
         state = self.host_state.numpy()
         stamp = self.epoch + tick * DT_US
-        self.link.send(stamp, imu, state, tick)
+        if len(pressures) != int(tick % 5 == 0) or (pressures and pressures[0][0] != tick * DT_US * 1000):
+            raise RuntimeError("missing or mistimed Flightlib barometer")
+        self.link.send(stamp, imu, state, tick, pressures[0][1] if pressures else None)
         self.ack = self.link.actuator(stamp)
 
         self.tick = tick

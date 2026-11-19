@@ -18,7 +18,7 @@ ModelTable prepareModels(const std::vector<ModelConfig>& models);
 std::vector<Scalar> prepareSchedule(Scalar control_dt, Scalar max_dt=0.0025f,
                                     Index capacity=1000000);
 void validateSensorPeriods(const std::vector<Scalar>& schedule,
-                           const SensorSettings& imu, const SensorSettings& odometry);
+                           const SensorSettings& imu, const SensorSettings& odometry, const SensorSettings& barometer = {});
 // Explicit synchronous setup/update boundary. Validates everything before upload;
 // preserves state, motors, accepted commands, and task counters.
 void configure(Simulation& simulation, const std::vector<ModelConfig>& models,

@@ -1,4 +1,6 @@
-# Flightmare CUDA — v0.1.2
+# Flightmare CUDA — v0.2.0
+
+The [CUDA barometer guide](flightlib-cuda/docs/cuda13-sensors.md#barometer) covers configuration, hardware validation and pressure delivery to ROS 2 and PX4.
 
 The [hardening report](flightlib-cuda/docs/v0.1.2-hardening.md) records invalid
 training rejection, setup/capture guards and current validation limits.

@@ -57,7 +57,7 @@ struct RuntimeConfig {
   Scalar agent_collision_radius{0}; // Positive enables one moving sphere per active slot.
   bool terminate_on_agent_collision{false};
   std::uint64_t sensor_step_ns{};
-  SensorSettings imu{}, odometry{};
+  SensorSettings imu{}, odometry{}, barometer{};
 };
 
 struct SwarmCollision {
@@ -88,7 +88,7 @@ struct RuntimeViews {
   CollisionFlags collisions;
   SwarmCollision swarm;
   SensorTruth sensor_truth;
-  SensorBuffers imu, odometry;
+  SensorBuffers imu, odometry, barometer;
   std::uint64_t sensor_step_ns{};
 };
 

@@ -11,9 +11,9 @@ import time
 
 import numpy as np
 import rclpy
-from flightlib_cuda import ImuConfig
+from flightlib_cuda import BarometerConfig, ImuConfig
 from flightlib_cuda.ros2 import SingleAgentBridge
-from flightlib_cuda.px4_sitl import SingleAgentSITL
+from flightlib_cuda.px4_sitl import ALT, SingleAgentSITL
 from qualify import evaluate
 
 
@@ -108,6 +108,7 @@ def main():
         node,
         control_dt=0.004,
         imu=ImuConfig(rate_hz=250),
+        barometer=BarometerConfig(origin_altitude_m=ALT, noise_std_pa=1.2, seed=17),
         camera_every=args.camera_every,
     )
     try:

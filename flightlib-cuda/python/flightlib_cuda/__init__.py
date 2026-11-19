@@ -3,10 +3,10 @@ from contextlib import contextmanager
 from enum import IntEnum
 import torch
 from . import _native
-from .sensors import ImuConfig, OdometryConfig, SensorPackets, settings as _sensor_settings
+from .sensors import BarometerConfig, ImuConfig, OdometryConfig, SensorPackets, settings as _sensor_settings
 from .transport import Backpressure, Subscription, Transport, step_nanoseconds
 
-__version__ = '0.1.2'
+__version__ = '0.2.0'
 ModelConfig = _native.ModelConfig
 TaskConfig = _native.TaskConfig
 load_model = _native.load_model
@@ -195,7 +195,7 @@ class Environment(_Resident):
                  models=None, model_ids=None, active=None, bounds=None, legacy=False,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
                  agent_collisions=False, candidate_capacity=None, imu=None, odometry=None,
-                 subscriptions=(), auto_reset=True):
+                 subscriptions=(), auto_reset=True, barometer=None):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -218,9 +218,11 @@ class Environment(_Resident):
                                                self.models, self.model_ids, self.active, self.bounds,
                                                candidate_capacity or 0, collision_radius if agent_collisions else 0.,
                                                terminate_on_collision, _sensor_settings(imu, ImuConfig),
-                                               _sensor_settings(odometry, OdometryConfig))
+                                               _sensor_settings(odometry, OdometryConfig),
+                                               _sensor_settings(barometer, BarometerConfig))
         self._native.auto_reset(auto_reset)
         self.imu = SensorPackets(self._native,"imu") if imu is not None else None
+        self.barometer = SensorPackets(self._native,"barometer") if barometer is not None else None
         self.odometry = SensorPackets(self._native,"odometry") if odometry is not None else None
         with torch.cuda.device(self.device):
             actions = torch.zeros((environments, 4) if legacy else (environments, slots, 4), dtype=torch.float32, device=self.device)

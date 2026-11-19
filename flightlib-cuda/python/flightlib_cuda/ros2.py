@@ -10,7 +10,7 @@ from builtin_interfaces.msg import Time
 from geometry_msgs.msg import TransformStamped, Vector3
 from rclpy.qos import qos_profile_sensor_data
 from rosgraph_msgs.msg import Clock
-from sensor_msgs.msg import CameraInfo, Image, Imu
+from sensor_msgs.msg import CameraInfo, FluidPressure, Image, Imu
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 from . import Environment, ImuConfig, Subscription
@@ -43,6 +43,7 @@ class SingleAgentBridge:
         *,
         control_dt=0.01,
         imu=ImuConfig(),
+        barometer=None,
         scene="room",
         camera_every=None,
         camera_size=(256, 192),
@@ -66,11 +67,15 @@ class SingleAgentBridge:
                     period_ns=camera_every * self.tick_ns,
                 )
             )
+        self.barometer_config = barometer
+        if barometer is not None:
+            specs.append(Subscription("barometer", destination="host", required=True, depth=self.depth))
         self.env = Environment(
             1,
             1,
             control_dt=control_dt,
             imu=imu,
+            barometer=barometer,
             scene=scene,
             auto_reset=False,
             subscriptions=specs,
@@ -82,6 +87,14 @@ class SingleAgentBridge:
         self.imu = node.create_publisher(Imu, "imu/data_raw", qos_profile_sensor_data)
         w, x, y, z = imu.mount_wxyz
         mounts = [_mount("imu_link", 0.0, (x, y, z, w))]
+        if barometer is not None:
+            self.pressure = node.create_publisher(FluidPressure, "barometer/pressure", qos_profile_sensor_data)
+            w, x, y, z = barometer.mount_wxyz
+            dx, dy, dz = barometer._settings()["offset"]
+            mount = _mount("barometer_link", float(dx), (x, y, z, w))
+            mount.transform.translation.y = float(dy)
+            mount.transform.translation.z = float(dz)
+            mounts.append(mount)
         self.stream = torch.cuda.Stream(device=self.env.device)
         if camera_every:
             from .camera import TiledCamera
@@ -127,6 +140,11 @@ class SingleAgentBridge:
         Lockstep consumers reuse the snapshot already copied for ROS publication.
         This call waits for local publication, including a due camera exposure.
         """
+        out, (imu, _) = self._step(True)
+        return out, imu
+
+    def step_with_sensors(self):
+        """Advance once and return outputs plus (IMU samples, pressure samples in Pa)."""
         return self._step(True)
 
     def _step(self, read_imu):
@@ -196,7 +214,24 @@ class SingleAgentBridge:
                 if self.image_valid.item():
                     self._image(exposure.acquired_ns)
 
-        return samples
+        pressures = []
+        if self.barometer_config is not None:
+            with self.env.subscriptions[-1].acquire(wait=True) as frame:
+                if frame.acquired_ns != ns or frame.sequence != tick:
+                    raise RuntimeError("unexpected barometer delivery tick")
+                for i in range(frame.count):
+                    if not frame.valid[i]:
+                        continue
+                    acquired = int(frame.packet_acquired_ns[i])
+                    msg = FluidPressure()
+                    msg.header.stamp = _stamp(acquired)
+                    msg.header.frame_id = "barometer_link"
+                    msg.fluid_pressure = float(frame.values[i, 0])
+                    msg.variance = self.barometer_config.noise_std_pa ** 2
+                    self.pressure.publish(msg)
+                    if read_imu:
+                        pressures.append((acquired, msg.fluid_pressure))
+        return samples, pressures
 
     def _image(self, ns):
         msg = Image()

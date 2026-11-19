@@ -1,6 +1,6 @@
 # Flightlib CUDA
 
-Version **0.1.2** hardens the scoped headless core and usage implementation.
+Version **0.2.0** adds an optional [CUDA barometer](docs/cuda13-sensors.md#barometer) for sensor validation and PX4 SITL.
 See the [hardening report](docs/v0.1.2-hardening.md) for fixes and validation limits.
 Start with the [repository quick start](../README.md),
 [implemented usage contracts](docs/cuda9-usage-contract.md), and

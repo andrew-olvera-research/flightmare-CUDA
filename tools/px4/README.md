@@ -1,6 +1,6 @@
 # Single-aircraft PX4 SITL qualification
 
-Flightlib advances one aircraft at 250 Hz. Its ROS 2 bridge publishes the clock and sensors, and the simulator sends the **same host IMU sample** to PX4 over its MAVLink simulator TCP interface. PX4 v1.17.0 runs commander, EKF2, position/attitude/rate control and control allocation. The optional 50 Hz FPV camera publishes RGB and calibration to ROS consumers. EKF2 uses inertial, magnetic, pressure and GNSS measurements in this qualification.
+Flightlib advances one aircraft at 250 Hz. Its ROS 2 bridge publishes the clock and sensors, and the simulator sends the **same host IMU and barometer samples** to PX4 over its MAVLink simulator TCP interface. PX4 v1.17.0 runs commander, EKF2, position/attitude/rate control and control allocation. The optional 50 Hz FPV camera publishes RGB and calibration to ROS consumers. EKF2 uses inertial, magnetic, pressure and GNSS measurements in this qualification.
 
 ## Reproduce
 

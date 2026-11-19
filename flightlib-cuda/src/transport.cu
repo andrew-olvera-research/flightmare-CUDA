@@ -14,7 +14,7 @@ template<int C> struct Measurement {
   Index lane, valid;
   float values[C];
 };
-static_assert(sizeof(Pose)==48 && sizeof(Measurement<6>)==80 && sizeof(Measurement<10>)==96);
+static_assert(sizeof(Measurement<1>)==64 && sizeof(Pose)==48 && sizeof(Measurement<6>)==80 && sizeof(Measurement<10>)==96);
 
 __global__ void poses(RuntimeViews v,const Index* lanes,Index size,Pose* rows,Index* count){
   const auto i=blockIdx.x*blockDim.x+threadIdx.x;
@@ -60,6 +60,7 @@ __global__ void measurements(SensorBuffers b,const Index* lanes,Index size,
 TensorSpec rowsSpec(const RuntimeViews& v,ExportKind kind,Offset actors){
   Offset slots=1,width=sizeof(Pose);
   if(kind==ExportKind::Imu){slots=v.imu.values.shape[0];width=sizeof(Measurement<6>);}
+  else if(kind==ExportKind::Barometer){slots=v.barometer.values.shape[0];width=sizeof(Measurement<1>);}
   else if(kind==ExportKind::Odometry){slots=v.odometry.values.shape[0];width=sizeof(Measurement<10>);}
   else if(kind!=ExportKind::Pose)throw std::invalid_argument("invalid export kind");
   if(!actors || actors>v.topology.batch.lanes || !slots ||
@@ -103,6 +104,8 @@ void packExportFrom(Simulation& sim,const Bindings& b,ExportKind kind,cudaStream
       if(cudaMemsetAsync(count,0,sizeof(Index),st)!=cudaSuccess)throw std::runtime_error("clear export count");
       if(capture.kind==ExportKind::Imu)
         measurements<6><<<blocks,128,0,st>>>(v.imu,lanes,size,static_cast<Measurement<6>*>(out),count);
+      else if(capture.kind==ExportKind::Barometer)
+        measurements<1><<<blocks,128,0,st>>>(v.barometer,lanes,size,static_cast<Measurement<1>*>(out),count);
       else
         measurements<10><<<blocks,128,0,st>>>(v.odometry,lanes,size,static_cast<Measurement<10>*>(out),count);
     }

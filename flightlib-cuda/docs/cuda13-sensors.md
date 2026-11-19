@@ -1,6 +1,6 @@
 # CUDA-13 sensor API
 
-Use the IMU for angular rate and specific force. Use local odometry for a position, attitude and velocity measurement with a known mount. Both run on the environment's CUDA stream. Each option allocates its queues once at construction. Leaving both disabled selects the original three-kernel headless step and allocates zero sensor-buffer bytes.
+Use the IMU for angular rate and specific force. Use local odometry for a position, attitude and velocity measurement with a known mount. The optional barometer measures absolute static pressure. All three sensors run on the environment's CUDA stream. Each option allocates its queues once at construction. Leaving all sensors disabled selects the original three-kernel headless step and allocates zero sensor-buffer bytes.
 
 ```python
 from flightlib_cuda import Environment, ImuConfig, OdometryConfig
@@ -94,3 +94,31 @@ for mode in disabled both; do
     $PY tools/sensors/bench_sensors.py --trace $mode
 done
 ```
+
+## Barometer
+
+Pass `barometer=BarometerConfig(rate_hz=50, origin_altitude_m=488, noise_std_pa=1.2, seed=17)` to `Environment` or the ROS 2 bridge. Each valid packet has one float, absolute pressure in Pa. The default sensor is ideal. The model uses the standard tropospheric lapse rate up to 11 km, local positive-up height and the rotated body-frame mount offset. Configure `sea_level_pa` for local weather, `bias_pa` for a fixed instrument offset and `noise_std_pa` for per-sample white noise. Samples outside the upper altitude limit or with nonpositive pressure carry an invalid flag. The existing phase, latency, dropout and episode semantics apply. Headless training leaves the sensor disabled by default.
+
+ROS 2 publishes `barometer/pressure` with acquisition time and variance in Pa². The PX4 qualification uses a synchronous 50 Hz sensor, converts Pa to hPa at the MAVLink boundary and derives standard pressure altitude from the measured pressure. Rebuild native consumers against the 0.2.0 headers.
+
+### Hardware comparison
+
+The reproducible check uses a 6.5 s Cube Orange recording distributed by PX4. It aligns logged pressure with GNSS MSL altitude over their common time interval. The first 57 samples set sea-level pressure and the per-sample noise scale. The remaining 58 are held out. The script verifies the log checksum before replay. [Original hardware recording](https://github.com/PX4/pyulog/blob/0b392f8444f843b796405b9766cc15a6dddedf62/test/sample_log_small.ulg)
+
+| Held-out measurement | Result |
+| --- | ---: |
+| Pressure RMSE against the GNSS-height-driven CUDA model | 24.73 Pa |
+| Mean predicted minus measured pressure | +24.45 Pa |
+| Short-term pressure variation, hardware | 1.48 Pa |
+| Short-term pressure variation, fixed-height CUDA replay | 1.09 Pa |
+
+Short-term variation is the standard deviation of adjacent pressure differences divided by √2. The first-half fit was 1.15 Pa. GNSS reported median vertical uncertainty of 5.88 m. The mean discrepancy corresponds to roughly 2 m near the surface. This recording tests the pressure scale and short-term fluctuations over a narrow altitude range. Climb lag, thermal drift and rotor-wash effects remain unqualified.
+
+From the repository root, after building the Python extension and installing pyulog as described in the [PX4 setup](../../tools/px4/README.md), run
+
+```sh
+curl -fL https://raw.githubusercontent.com/PX4/pyulog/0b392f8444f843b796405b9766cc15a6dddedf62/test/sample_log_small.ulg -o /tmp/cube-orange.ulg
+PYTHONPATH=/build/flightlib-cuda-python-native/python:/build/flightmare-mavlink /build/flightlib-cuda-python/bin/python tools/sensors/validate_barometer.py /tmp/cube-orange.ulg
+```
+
+Run both commands inside the dev container so the log and the CUDA build are visible together.

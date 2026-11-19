@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0 — CUDA barometer and estimator integration
+
+- Add per-lane absolute pressure packets with configurable reference atmosphere, mounting offset, bias, noise and acquisition/delivery timing.
+- Publish the same measurement through ROS 2 and the single-aircraft PX4 simulator link. Include a reproducible comparison with Cube Orange hardware data.
+
 ## 0.1.2 — usage and training hardening
 
 - Systematic audit: fix 32-bit component-offset overflow, Eigen model-preparation

@@ -115,6 +115,23 @@ class OdometryConfig(_Schedule):
         return d
 
 
+@dataclass(frozen=True)
+class BarometerConfig(_Schedule):
+    """Absolute static pressure in Pa. World Z is height above the configured origin."""
+
+    rate_hz: float = 50.0
+    sea_level_pa: float = 101325.0
+    origin_altitude_m: float = 0.0
+    bias_pa: float = 0.0
+    noise_std_pa: float = 0.0  # Independent per-sample readout noise.
+
+    def _settings(self):
+        d = super()._settings()
+        d.update(sea_level_pa=self.sea_level_pa, origin_altitude_m=self.origin_altitude_m,
+                 bias=(self.bias_pa,) + (0.0,) * 5, noise=(self.noise_std_pa,) + (0.0,) * 5)
+        return d
+
+
 def settings(config, expected):
     if config is None:
         return {}

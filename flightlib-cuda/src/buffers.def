@@ -82,6 +82,7 @@ FLC_BUFFER(sensor_truth.corrected, Mask, "sensor_truth", T)
   FLC_BUFFER(name.valid,Mask,"sensors",D,N) \
   FLC_BUFFER(name.metadata,std::uint64_t,"sensors",6,D,N)
 FLC_SENSOR(imu,6,imuPackets,imuQueue)
+FLC_SENSOR(barometer,1,baroPackets,baroQueue)
 FLC_SENSOR(odometry,10,odomPackets,odomQueue)
 FLC_BUFFER(imu.drift,Scalar,"sensors",6,imuPackets ? N : 0)
 #undef FLC_SENSOR
