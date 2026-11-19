@@ -292,11 +292,20 @@ class Environment(_Resident):
             self._transport.step(self._native, stream, graph, random)
         return self.outputs
 
-    def record_step(self, random=True, stream=None):
-        """Append a step to an active external capture. See caller-owned graph lifetime rules."""
+    def record_step(self, random=True, stream=None, *, before_reset=None):
+        """Record a step and optional device work reading the pre-autoreset state.
+
+        The zero-argument callback runs once during capture on the capture stream.
+        Its recorded kernels run on every replay. See caller-owned graph lifetime rules.
+        """
         if self._transport is not None:
             raise ValueError("external graph recording requires an environment without subscriptions")
-        self._native.record_step(self._stream(stream), random)
+        if before_reset is not None and not callable(before_reset):
+            raise TypeError("before_reset must be callable")
+        stream = torch.cuda.current_stream(self.device) if stream is None else stream
+        handle = self._stream(stream)
+        with torch.cuda.stream(stream):
+            self._native.record_step(handle, random, before_reset)
         return self.outputs
 
     def record_reset(self, random=False, stream=None):

@@ -6,7 +6,7 @@ import sys
 
 
 class RacingWorld:
-    def __init__(self, envs):
+    def __init__(self, envs, *, pose_destination="host"):
         import torch
         from flightlib_cuda import Environment, Subscription
 
@@ -17,9 +17,13 @@ class RacingWorld:
             scene="split_s",
             collision_radius=0.125,
             terminate_on_collision=True,
-            subscriptions=(Subscription("pose", destination="host", required=True),),
+            subscriptions=(
+                Subscription("pose", destination=pose_destination, required=True),
+            )
+            if pose_destination
+            else (),
         )
-        (self.channel,) = env.subscriptions
+        self.channel = env.subscriptions[0] if env.subscriptions else None
         reset = env.reset_state
         lane = torch.arange(envs, device=env.device)
         reset[0] = -0.9 + (lane % 5 - 2) * 0.1
@@ -32,9 +36,11 @@ class RacingWorld:
         env.state[8, 0] = 70
         env.capture(random=False)
         out = env.step(graph=True, random=False)
-        with self.channel.acquire(wait=True):
-            assert env.collision_hit[0] and out["done"][0, 0]
-            assert not env.collision_hit[1:].bool().any()
+        if self.channel:
+            with self.channel.acquire(wait=True):
+                pass
+        assert env.collision_hit[0] and out["done"][0, 0]
+        assert not env.collision_hit[1:].bool().any()
         self.counts = torch.zeros((), device=env.device, dtype=torch.int64)
 
     def step(self, action):

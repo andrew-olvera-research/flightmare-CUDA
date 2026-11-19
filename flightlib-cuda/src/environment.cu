@@ -298,11 +298,14 @@ void validateExecution(const Simulation& s,TaskExecution execution){
     throw std::invalid_argument("moving contacts require a simultaneous world step");
   if(execution!=TaskExecution::FusedReset&&execution!=TaskExecution::SeparateReset&&execution!=TaskExecution::NoReset&&execution!=TaskExecution::FirstLaneReset&&execution!=TaskExecution::DeferredReset)throw std::invalid_argument("unknown task execution");}
 }
+static void finishResetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& inputs,void* ctx){
+  resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(inputs),*static_cast<ResetSource*>(ctx),true);
+}
+void recordEnvironmentFinish(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){
+  validate(s,b);validateSource(source);s.recordInto(stream,finishResetLaunch,&source,&b);
+}
 void finishResetFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){
-  validate(s,b);validateSource(source);
-  s.enqueueFrom(stream,[](const RuntimeViews& v,cudaStream_t st,const std::vector<BindingRequest>& inputs,void* ctx){
-    resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,st>>>(v,pointers(inputs),*static_cast<ResetSource*>(ctx),true);
-  },&source,&b);
+  validate(s,b);validateSource(source);s.enqueueFrom(stream,finishResetLaunch,&source,&b);
 }
 void resetEnvironment(Simulation& s,const Bindings& b,ResetSource source){validate(s,b);validateSource(source);s.enqueue(resetLaunch,&source,&b);}
 void resetEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){validate(s,b);validateSource(source);s.enqueueFrom(stream,resetLaunch,&source,&b);}

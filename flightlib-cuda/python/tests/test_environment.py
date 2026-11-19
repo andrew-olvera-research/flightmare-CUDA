@@ -193,3 +193,30 @@ def test_caller_graph_policy_step_and_masked_reset():
             assert torch.equal(captured.time, eager.time)
             assert torch.equal(captured.state, eager.state)
             assert torch.equal(captured.outputs["observation"], eager.outputs["observation"])
+
+
+@pytest.mark.parametrize("auto_reset", [True, False])
+def test_captured_pre_reset_read(auto_reset):
+    stream = torch.cuda.Stream()
+    with torch.cuda.stream(stream):
+        env = Environment(2, auto_reset=auto_reset)
+        env.reset_state[2].fill_(4)
+        env.reset()
+        env.state[2, 0] = 0.01
+        sampled_z = torch.empty_like(env.time)
+        calls = []
+
+        def sample():
+            calls.append(True)
+            sampled_z.copy_(env.state[2])
+
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=stream):
+            env.record_step(random=False, before_reset=sample)
+        graph.replay()
+        assert env.outputs["done"].flatten().tolist() == [1, 0]
+        assert sampled_z[0] < 0.02
+        assert env.state[2, 0] == (4 if auto_reset else sampled_z[0])
+        assert sampled_z[1] == env.state[2, 1]
+        graph.replay()
+        assert calls == [True]

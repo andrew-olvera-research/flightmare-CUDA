@@ -197,3 +197,12 @@ mode; the external graph cannot detect a stale configuration on replay.
 Change input and selection values in place between replays. Host-managed
 subscriptions require ordinary stepping. Resident collisions and sensor
 kernels use the same step launcher in either mode.
+
+
+For a device consumer that needs the terminal pose, pass a zero-argument callback
+to `env.record_step(random=False, before_reset=sample)`. During capture Flightlib
+calls `sample()` on the recording stream after dynamics, collision queries and
+reward evaluation. The graph replays the recorded device work before applying
+autoresets. Reward, validity, done and terminal-reward semantics are preserved.
+Use device operations with stable storage and keep their buffers alive for the graph
+lifetime. With autoreset disabled the callback still reads the post-step state.
