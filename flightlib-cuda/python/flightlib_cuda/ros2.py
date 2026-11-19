@@ -53,6 +53,7 @@ class SingleAgentBridge:
             raise ValueError("camera_every must be a positive tick interval")
         self.tick_ns = step_nanoseconds(control_dt)
         self.every = camera_every
+        self.imu_config = imu
         specs = [
             Subscription("imu", destination="host", required=True, depth=self.depth)
         ]
@@ -118,6 +119,17 @@ class SingleAgentBridge:
         self.closed = False
 
     def step(self):
+        return self._step(False)
+
+    def step_with_imu(self):
+        """Advance once, then return (outputs, [(acquisition_ns, six sensor values), ...]).
+
+        Lockstep consumers reuse the snapshot already copied for ROS publication.
+        This call waits for local publication, including a due camera exposure.
+        """
+        return self._step(True)
+
+    def _step(self, read_imu):
         if self.closed:
             raise RuntimeError("bridge is closed")
         # Retain at most depth exposures. A slow publisher applies backpressure
@@ -129,7 +141,10 @@ class SingleAgentBridge:
             self.pending.popleft()
         out = self.env.step(graph=True, random=False)
         self.tick += 1
-        self.pending.append(self.worker.submit(self._publish, self.tick))
+        future = self.worker.submit(self._publish, self.tick, read_imu)
+        self.pending.append(future)
+        if read_imu:
+            return out, future.result()
         return out
 
     def drain(self):
@@ -147,7 +162,8 @@ class SingleAgentBridge:
             self.worker.shutdown(wait=True)
             self.env.close_subscriptions()
 
-    def _publish(self, tick):
+    def _publish(self, tick, read_imu):
+        samples = [] if read_imu else None
         ns = tick * self.tick_ns
         channel = self.env.subscriptions[0]
         with channel.acquire(wait=True) as frame:
@@ -158,10 +174,14 @@ class SingleAgentBridge:
                 if not frame.valid[i]:
                     continue
                 msg = Imu()
-                msg.header.stamp = _stamp(int(frame.packet_acquired_ns[i]))
+                acquired_ns = int(frame.packet_acquired_ns[i])
+                msg.header.stamp = _stamp(acquired_ns)
                 msg.header.frame_id = "imu_link"
                 msg.orientation_covariance[0] = -1.0
-                gx, gy, gz, ax, ay, az = frame.values[i].tolist()
+                values = frame.values[i].tolist()
+                if read_imu:
+                    samples.append((acquired_ns, values))
+                gx, gy, gz, ax, ay, az = values
                 msg.angular_velocity = Vector3(x=gx, y=gy, z=gz)
                 msg.linear_acceleration = Vector3(x=ax, y=ay, z=az)
                 self.imu.publish(msg)
@@ -175,6 +195,8 @@ class SingleAgentBridge:
                 self.stream.synchronize()
                 if self.image_valid.item():
                     self._image(exposure.acquired_ns)
+
+        return samples
 
     def _image(self, ns):
         msg = Image()

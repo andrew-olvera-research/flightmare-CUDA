@@ -30,6 +30,7 @@ It retains the Flightmare dynamics and model preparation; it does not use PhysX.
   The [Isaac Sim benchmark](flightlib-cuda/docs/cuda15-isaac.md) remains available for historical comparisons.
 - A single-aircraft ROS 2 Jazzy bridge publishes simulation time, raw IMU, optional RGB,
   camera calibration and static sensor mounts. See the [bridge setup and wire tests](tools/ros2/README.md).
+- Single-aircraft PX4 SITL closes the motor loop at 250 Hz and checks onboard EKF2 estimates against Flightlib truth. See the [setup, timing contract and benchmark](tools/px4/README.md).
 - Persistent storage, explicit streams/ownership, CUDA graph execution, grouped
   environment/agent views and explicit host-copy adapters.
 - Resident policy inference, rollout history, fused episode statistics and GAE,
