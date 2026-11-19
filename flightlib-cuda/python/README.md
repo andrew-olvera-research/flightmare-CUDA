@@ -111,8 +111,7 @@ before access and `record_usage(stream)` after queued work. An explicit
 `step(stream=...)` names the producer/consumer stream; it does not move arbitrary
 PyTorch operations onto that stream. When final external reads follow the last
 step, record their usage before releasing the owner. Concurrent host submission
-to one environment is unsupported. External PyTorch graph capture is rejected;
-use the explicit environment capture API. This simulator is not differentiable.
+to one environment is unsupported. For external PyTorch capture use the recording methods below. This simulator is not differentiable.
 
 `configure_task(...)` and `configure(control_dt)` are synchronous setup boundaries
 that invalidate captured graphs. The latter uploads the stored host models,
@@ -154,3 +153,47 @@ Start from hover, command one axis at a time, and inspect the measured rate
 (state rows 10–12), settling time and rotor saturation. Reduce the axis gain
 for overshoot or oscillation; increase it for sluggish unsaturated response.
 Use the same gains and action scaling when evaluating a trained policy.
+
+### Caller-owned CUDA graphs
+
+Use a non-default, nonblocking CUDA stream and the bound device buffers.
+The example uses an application-defined reset condition and disables the
+environment's automatic reset. Keep the default automatic reset to retain
+the normal vector task terminal reward and reset semantics.
+
+```python
+env = Environment(128, auto_reset=False)
+env.reset_state[2].fill_(4)
+env.reset()
+stream = torch.cuda.Stream(device=env.device)
+graph = torch.cuda.CUDAGraph()
+reward = torch.empty_like(env.outputs["reward"])
+stream.wait_stream(torch.cuda.current_stream(env.device))
+with env.access(stream), torch.no_grad():
+    # Warm up the policy and its libraries on this stream before capture.
+    policy(env.outputs["observation"])
+    with torch.cuda.graph(graph, stream=stream):
+        env.actions.copy_(policy(env.outputs["observation"]))
+        out = env.record_step(random=False)
+        reward.copy_(out["reward"])  # explicit reset clears selected outputs
+        env.selected.copy_(out["done"].reshape(-1))
+        env.record_reset(random=False)
+    for _ in range(100):
+        graph.replay()
+        # Consume reward here on the same stream before its next overwrite.
+```
+
+Capture records the existing kernels directly onto the current caller stream.
+The recording methods insert no runtime event records, stream waits or private
+graph replay nodes. The access scope orders prior work on entry and publishes
+completion on exit, once per replay batch. Use one stream for capture, replay
+and consumption, with exclusive access to the environment throughout. Order
+other producers of inputs and consumers of outputs explicitly.
+
+Keep the environment, graph, policy and bound storage alive through the last
+replay and its completion. A caller-owned graph holds raw device addresses.
+Rebuild it after changing bindings, task/plant configuration or auto-reset
+mode; the external graph cannot detect a stale configuration on replay.
+Change input and selection values in place between replays. Host-managed
+subscriptions require ordinary stepping. Resident collisions and sensor
+kernels use the same step launcher in either mode.

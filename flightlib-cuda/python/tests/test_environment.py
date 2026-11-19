@@ -161,3 +161,35 @@ def test_ctbr_mix_and_plant_gains(graph):
     assert roll[1] > 0 and roll[4] < 0
     torch.testing.assert_close(env.state[:, 1], env.state[:, 2])
     torch.testing.assert_close(env.state[:, 0], env.state[:, 3], atol=1e-5, rtol=1e-5)
+
+def test_caller_graph_policy_step_and_masked_reset():
+    stream = torch.cuda.Stream()
+    graph = torch.cuda.CUDAGraph()
+    captured, eager = (Environment(3, auto_reset=False) for _ in range(2))
+    for env in (captured, eager):
+        env.reset_state[2].fill_(4)
+        env.reset()
+    mask = torch.zeros_like(captured.selected)
+    reward = torch.empty_like(captured.outputs["reward"])
+    stream.wait_stream(torch.cuda.current_stream())
+    with captured.access(stream), eager.access(stream):
+        with pytest.raises(ValueError, match="active capture"):
+            captured.record_step(stream=stream)
+        with torch.cuda.graph(graph, stream=stream):
+            captured.actions.copy_(captured.outputs["observation"][..., :4].tanh())
+            result = captured.record_step(random=False)
+            reward.copy_(result["reward"])
+            captured.selected.copy_(mask)
+            captured.record_reset()
+        for i in range(5):
+            mask.zero_()
+            mask[i % 3] = 1
+            graph.replay()
+            eager.actions.copy_(eager.outputs["observation"][..., :4].tanh())
+            expected = eager.step(random=False)["reward"].clone()
+            eager.selected.copy_(mask)
+            eager.reset()
+            assert torch.equal(reward, expected)
+            assert torch.equal(captured.time, eager.time)
+            assert torch.equal(captured.state, eager.state)
+            assert torch.equal(captured.outputs["observation"], eager.outputs["observation"])

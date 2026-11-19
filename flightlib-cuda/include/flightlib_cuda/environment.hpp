@@ -33,6 +33,8 @@ void stepEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Random
 void stepEnvironmentFrom(Simulation&,const Bindings&,cudaStream_t,
                          ResetSource=ResetSource::Random,TaskExecution=TaskExecution::FusedReset);
 void resetEnvironmentFrom(Simulation&,const Bindings&,cudaStream_t,ResetSource=ResetSource::Explicit);
+void recordEnvironmentStep(Simulation&,const Bindings&,cudaStream_t,ResetSource,TaskExecution);
+void recordEnvironmentReset(Simulation&,const Bindings&,cudaStream_t,ResetSource);
 Graph captureEnvironment(Simulation&,const Bindings&,ResetSource=ResetSource::Random,
                          TaskExecution=TaskExecution::FusedReset);
 }

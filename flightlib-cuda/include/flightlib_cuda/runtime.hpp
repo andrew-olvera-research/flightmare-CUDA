@@ -141,6 +141,9 @@ class Simulation {
   // Framework bridge: persistent events order producer -> private stream ->
   // producer. Default streams are allowed here, never captured implicitly.
   void enqueueFrom(cudaStream_t producer, Launch, void* context=nullptr, const Bindings* inputs=nullptr);
+  // Append kernels to an active caller capture. Caller retains all storage and
+  // orders graph replays with waitOn/recordUsage outside the capture.
+  void recordInto(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs);
   void enqueueSetup(Launch, void* context=nullptr); // invalidates captured schedules
   Graph capture(Launch, void* context=nullptr, const Bindings* inputs=nullptr);
   void replay(const Graph&);
@@ -151,7 +154,7 @@ class Simulation {
   void synchronize() const;
   std::uint64_t submissions() const;
  private:
-  void submit(cudaStream_t,Launch,void*,const Bindings*,bool bridge,bool setup,const Graph* graph=nullptr);
+  void submit(cudaStream_t,Launch,void*,const Bindings*,bool bridge,bool setup,const Graph* graph=nullptr,bool capture_only=false);
   std::shared_ptr<detail::RuntimeStorage> storage_;
 };
 

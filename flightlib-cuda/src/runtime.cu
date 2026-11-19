@@ -309,8 +309,11 @@ void Simulation::enqueueOn(cudaStream_t stream,Launch launch,void* context,const
 void Simulation::enqueueFrom(cudaStream_t producer,Launch launch,void* context,const Bindings* inputs){
   submit(producer,launch,context,inputs,true,false);
 }
+void Simulation::recordInto(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs){
+  submit(stream,launch,context,inputs,false,false,nullptr,true);
+}
 void Simulation::enqueueSetup(Launch launch,void* context){submit(storage_->stream,launch,context,nullptr,false,true);}
-void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs,bool bridge,bool setup,const Graph* graph){
+void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bindings* inputs,bool bridge,bool setup,const Graph* graph,bool capture_only){
   auto& s=*storage_;std::unique_lock<std::mutex> lock(s.mutex,std::try_to_lock);
   if(!lock.owns_lock())throw std::logic_error("concurrent simulation submission");
   if(s.poisoned)throw std::logic_error("simulation launch failed; recreate runtime");
@@ -328,8 +331,17 @@ void Simulation::submit(cudaStream_t stream,Launch launch,void* context,const Bi
   }
   cudaStreamCaptureStatus capture=cudaStreamCaptureStatusNone;
   check(cudaStreamIsCapturing(stream,&capture),"inspect stream capture");
-  if(capture!=cudaStreamCaptureStatusNone)throw std::invalid_argument("external capture unsupported; use explicit capture API");
   static const std::vector<BindingRequest> empty;
+  if(capture_only){
+    if(stream==s.stream || capture!=cudaStreamCaptureStatusActive)
+      throw std::invalid_argument("recordInto requires active capture on a caller-owned stream");
+    // Capture records nodes only. The runtime tail describes executed work and
+    // must never be replaced by an event from inside a caller's capture.
+    launch(s.views,stream,inputs?inputs->inputs_:empty,context);
+    check(cudaGetLastError(),"record external graph nodes");
+    return;
+  }
+  if(capture!=cudaStreamCaptureStatusNone)throw std::invalid_argument("external capture unsupported; use explicit capture API");
   cudaStream_t target=bridge?s.stream:stream;
   if(setup)++s.generation;
   try{

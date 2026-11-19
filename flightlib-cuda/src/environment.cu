@@ -312,6 +312,13 @@ void stepEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExec
 void stepEnvironmentFrom(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source,TaskExecution execution){
   validate(s,b);validateSource(source);validateExecution(s,execution);EnvironmentContext ctx{source,execution};s.enqueueFrom(stream,environmentLaunch,&ctx,&b);
 }
+void recordEnvironmentStep(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source,TaskExecution execution){
+  validate(s,b);validateSource(source);validateExecution(s,execution);
+  EnvironmentContext ctx{source,execution};s.recordInto(stream,environmentLaunch,&ctx,&b);
+}
+void recordEnvironmentReset(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){
+  validate(s,b);validateSource(source);s.recordInto(stream,resetLaunch,&source,&b);
+}
 Graph captureEnvironment(Simulation& s,const Bindings& b,ResetSource source,TaskExecution execution){
   validate(s,b);validateSource(source);validateExecution(s,execution);EnvironmentContext ctx{source,execution};return s.capture(environmentLaunch,&ctx,&b);
 }

@@ -195,7 +195,7 @@ class Environment(_Resident):
                  models=None, model_ids=None, active=None, bounds=None, legacy=False,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
                  agent_collisions=False, candidate_capacity=None, imu=None, odometry=None,
-                 subscriptions=()):
+                 subscriptions=(), auto_reset=True):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -219,6 +219,7 @@ class Environment(_Resident):
                                                candidate_capacity or 0, collision_radius if agent_collisions else 0.,
                                                terminate_on_collision, _sensor_settings(imu, ImuConfig),
                                                _sensor_settings(odometry, OdometryConfig))
+        self._native.auto_reset(auto_reset)
         self.imu = SensorPackets(self._native,"imu") if imu is not None else None
         self.odometry = SensorPackets(self._native,"odometry") if odometry is not None else None
         with torch.cuda.device(self.device):
@@ -289,6 +290,20 @@ class Environment(_Resident):
             stream = torch.cuda.current_stream(self.device) if stream is None else stream
             self._stream(stream)
             self._transport.step(self._native, stream, graph, random)
+        return self.outputs
+
+    def record_step(self, random=True, stream=None):
+        """Append a step to an active external capture. See caller-owned graph lifetime rules."""
+        if self._transport is not None:
+            raise ValueError("external graph recording requires an environment without subscriptions")
+        self._native.record_step(self._stream(stream), random)
+        return self.outputs
+
+    def record_reset(self, random=False, stream=None):
+        """Append a reset using the bound device selection mask at replay time."""
+        if self._transport is not None:
+            raise ValueError("external graph recording requires an environment without subscriptions")
+        self._native.record_reset(self._stream(stream), random)
         return self.outputs
 
     def close_subscriptions(self):

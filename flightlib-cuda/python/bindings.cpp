@@ -165,6 +165,14 @@ struct NativeEnvironment {
     if(replay){if(!captured)throw std::logic_error("capture before graph replay");if(random!=captured_random)throw std::invalid_argument("reset mode differs from captured graph");sim.replayFrom(defer?transition_graph:graph,s);}
     else stepEnvironmentFrom(sim,bindings,s,random?ResetSource::Random:ResetSource::Explicit,defer?TaskExecution::DeferredReset:execution);
   }
+  void recordStep(std::uintptr_t stream,bool random){
+    stable();recordEnvironmentStep(sim,bindings,reinterpret_cast<cudaStream_t>(stream),
+      random?ResetSource::Random:ResetSource::Explicit,execution);
+  }
+  void recordReset(std::uintptr_t stream,bool random){
+    stable();recordEnvironmentReset(sim,bindings,reinterpret_cast<cudaStream_t>(stream),
+      random?ResetSource::Random:ResetSource::Explicit);
+  }
   void finish(std::uintptr_t stream,bool random){if(execution==TaskExecution::FusedReset)
     finishResetFrom(sim,bindings,reinterpret_cast<cudaStream_t>(stream),random?ResetSource::Random:ResetSource::Explicit);}
 };
@@ -244,6 +252,7 @@ PYBIND11_MODULE(_native,m){
     .def("seed",[](NativeEnvironment& e,std::uint64_t seed){seedEnvironment(e.sim,seed);})
     .def("capture",&NativeEnvironment::capture,py::arg("random"),py::arg("poses")=false)
     .def("step",&NativeEnvironment::step,py::arg("stream"),py::arg("replay"),py::arg("random"),py::arg("poses")=false)
+    .def("record_step",&NativeEnvironment::recordStep).def("record_reset",&NativeEnvironment::recordReset)
     .def("finish_transition",&NativeEnvironment::finish)
     .def("tensor",[](NativeEnvironment& e,const std::string& name){return exportTensor(e.sim,name);})
     .def("wait",[](NativeEnvironment& e,std::uintptr_t s){e.sim.waitOn(reinterpret_cast<cudaStream_t>(s));})
