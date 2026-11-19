@@ -1,5 +1,6 @@
 """Static upright box courses. Host BVHs are immutable and shared across lanes."""
 
+from dataclasses import dataclass
 from functools import lru_cache
 from importlib.resources import files
 import json
@@ -25,15 +26,27 @@ def _xyz(value, positive=False):
     return value
 
 
-def load_boxes(data):
-    """Expand instanced box assets in metres, right handed, Z up. Size is full extent."""
-    scene = json.loads(data)
-    if scene["schema"] != "flightmare.boxes.v1":
+@dataclass(frozen=True)
+class Course:
+    colliders: tuple
+    visual_boxes: tuple
+    visual_meshes: tuple
+
+
+def _color(value):
+    rgb = tuple(_xyz(value))
+    if not all(0 <= c <= 1 for c in rgb):
+        raise ValueError("display color outside [0,1]")
+    return rgb
+
+
+def _expand(scene):
+    if scene["schema"] not in ("flightmare.boxes.v1", "flightmare.scene.v2"):
         raise ValueError("unsupported course schema")
     assets = {a["name"]: a["boxes"] for a in scene["assets"]}
     if len(assets) != len(scene["assets"]):
         raise ValueError("duplicate asset name")
-    boxes = []
+    boxes, visuals = [], []
     for instance in scene["instances"]:
         x, y, z = _xyz(instance["position"])
         yaw = instance["yaw_deg"]
@@ -43,26 +56,83 @@ def load_boxes(data):
         for box in assets[instance["asset"]]:
             u, v, w = _xyz(box["center"])
             sx, sy, sz = _xyz(box["size"], positive=True)
-            boxes.append(
-                (
-                    x + c * u - s * v,
-                    y + s * u + c * v,
-                    z + w,
-                    sx / 2,
-                    sy / 2,
-                    sz / 2,
-                    c,
-                    s,
-                )
+            geometry = (
+                x + c * u - s * v,
+                y + s * u + c * v,
+                z + w,
+                sx / 2,
+                sy / 2,
+                sz / 2,
+                c,
+                s,
             )
-    if not boxes or len(boxes) >= 2**23:
+            if box.get("collision", True):
+                boxes.append(geometry)
+            if box.get("visible", True):
+                default = (
+                    [0.5, 0.54, 0.58]
+                    if instance["asset"] == "Room"
+                    else [0.86, 0.25, 0.08]
+                )
+                visuals.append((geometry, _color(box.get("color", default))))
+    meshes = []
+    for mesh in scene.get("visual_meshes", []):
+        points = tuple(tuple(_xyz(v)) for v in mesh["points"])
+        indices = tuple(mesh["indices"])
+        if (
+            not indices
+            or len(indices) % 3
+            or any(type(i) != int or not 0 <= i < len(points) for i in indices)
+        ):
+            raise ValueError("invalid visual triangle indices")
+        meshes.append((points, indices, _color(mesh["color"])))
+    if len(boxes) >= 2**23:
         raise ValueError("course must fit float32 exact BVH indices")
-    return boxes
+    return Course(tuple(boxes), tuple(visuals), tuple(meshes))
+
+
+def load_boxes(data):
+    """Expand collision proxies from a portable course document."""
+    boxes = _expand(json.loads(data)).colliders
+    if not boxes:
+        raise ValueError("course contains no collision boxes")
+    return list(boxes)
+
+
+def load_scene(source):
+    """Load a scene once at setup and share it between an environment and its camera."""
+    if isinstance(source, Course):
+        return source
+    if isinstance(source, str) and source in ("room", "split_s"):
+        return _portable(
+            files(__package__).joinpath("assets", source + ".flightcourse").read_bytes()
+        )
+    path = Path(source)
+    if path.suffix.lower() in (".usd", ".usda", ".usdc", ".usdz"):
+        from .usd_scene import read_usd
+
+        return _expand(read_usd(path))
+    if path.suffix.lower() in (".unity", ".prefab"):
+        from .unity_scene import read_unity
+
+        return _expand(read_unity(path))
+    return _expand(json.loads(path.read_bytes()))
+
+
+@lru_cache(maxsize=16)
+def _portable(data):
+    return _expand(json.loads(data))
 
 
 @lru_cache(maxsize=16)
 def _compile(data):
-    boxes = load_boxes(data)
+    return _compile_boxes(tuple(load_boxes(data)))
+
+
+@lru_cache(maxsize=16)
+def _compile_boxes(boxes):
+    if not boxes:
+        raise ValueError("course contains no collision boxes")
     rows = []
 
     def build(group):
@@ -109,17 +179,14 @@ def bind_scene(scene, radius, terminate, device):
         raise ValueError(
             "collision radius must be positive in float32 and at most 1e6 m"
         )
-    path = (
-        files(__package__).joinpath("assets", scene + ".flightcourse")
-        if isinstance(scene, str) and scene in ("room", "split_s")
-        else Path(scene)
-    )
-    data = path.read_bytes()
-    key = (device, data)
+    boxes = load_scene(scene).colliders
+    key = (device, boxes)
     with _lock:
         nodes = _device_cache.get(key)
         if nodes is None:
-            nodes = torch.tensor(_compile(data), dtype=torch.float32, device=device)
+            nodes = torch.tensor(
+                _compile_boxes(boxes), dtype=torch.float32, device=device
+            )
             # Other construction streams may immediately acquire this cache entry.
             torch.cuda.current_stream(device).synchronize()
             _device_cache[key] = nodes

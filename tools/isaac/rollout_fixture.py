@@ -6,7 +6,7 @@ import sys
 
 
 class RacingWorld:
-    def __init__(self, envs, *, pose_destination="host"):
+    def __init__(self, envs, *, pose_destination="host", scene="split_s"):
         import torch
         from flightlib_cuda import Environment, Subscription
 
@@ -14,7 +14,7 @@ class RacingWorld:
             envs,
             1,
             control_dt=0.02,
-            scene="split_s",
+            scene=scene,
             collision_radius=0.125,
             terminate_on_collision=True,
             subscriptions=(
@@ -32,15 +32,17 @@ class RacingWorld:
         reset[3] = reset[6] = 0.5**0.5
         env.reset()
         # Force a swept gate-post crossing in lane zero before timing.
-        env.state[:3, 0] = torch.tensor([-0.1, -1.60, 3.48], device=env.device)
-        env.state[8, 0] = 70
+        if scene == "split_s":
+            env.state[:3, 0] = torch.tensor([-0.1, -1.60, 3.48], device=env.device)
+            env.state[8, 0] = 70
         env.capture(random=False)
         out = env.step(graph=True, random=False)
         if self.channel:
             with self.channel.acquire(wait=True):
                 pass
-        assert env.collision_hit[0] and out["done"][0, 0]
-        assert not env.collision_hit[1:].bool().any()
+        if scene == "split_s":
+            assert env.collision_hit[0] and out["done"][0, 0]
+            assert not env.collision_hit[1:].bool().any()
         self.counts = torch.zeros((), device=env.device, dtype=torch.int64)
 
     def step(self, action):

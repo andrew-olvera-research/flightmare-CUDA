@@ -18,10 +18,12 @@ from rollout_fixture import RacingWorld
 
 def benchmark(count, args):
     world = RacingWorld(
-        count, pose_destination="device" if args.mode == "subscription" else None
+        count,
+        scene=args.scene,
+        pose_destination="device" if args.mode == "subscription" else None,
     )
     try:
-        camera = TiledCamera(count)
+        camera = TiledCamera(count, scene=world.env.scene)
         if args.pixel_priority:
             camera.camera.default_render_config.render_order = (
                 camera.camera.RenderOrder.PIXEL_PRIORITY
@@ -83,6 +85,7 @@ def benchmark(count, args):
             torch_peak_allocated_mib=torch.cuda.max_memory_allocated() / 2**20,
             torch_peak_reserved_mib=torch.cuda.max_memory_reserved() / 2**20,
             mode=args.mode,
+            scene=args.scene,
             render_order=camera.camera.default_render_config.render_order.name,
             pose_host_bytes=world.channel.stats["host_bytes"] if world.channel else 0,
         )
@@ -95,6 +98,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--envs", type=int, required=True)
     parser.set_defaults(epochs=4, warmup=24)
+    parser.add_argument(
+        "--scene", default="split_s", help="course alias or authored scene path"
+    )
     parser.add_argument("--steps", type=int, default=32)
     parser.add_argument("--rollouts", type=int, default=4)
     parser.add_argument(

@@ -230,9 +230,11 @@ class Environment(_Resident):
             time = torch.zeros(n, dtype=torch.float32, device=self.device)
         self._scene_bindings = ()
         self.collision_hit = self.collision_valid = None
+        self.scene = None
         if scene is not None:
-            from .scene import bind_scene
-            self._scene_bindings = bind_scene(scene, collision_radius, terminate_on_collision, self.device)
+            from .scene import bind_scene, load_scene
+            self.scene = load_scene(scene)
+            self._scene_bindings = bind_scene(self.scene, collision_radius, terminate_on_collision, self.device)
         self.agent_collision_hit = self.candidate_pairs = self.candidate_count = self.candidate_overflow = None
         if agent_collisions:
             self.agent_collision_hit, self.candidate_pairs, self.candidate_count, self.candidate_overflow = (

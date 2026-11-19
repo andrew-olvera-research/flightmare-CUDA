@@ -1,6 +1,6 @@
-# Newton tiled FPV prototype
+# Newton tiled FPV cameras
 
-The optional renderer uses one static Split-S scene, one aircraft and camera per environment, and one shared pinhole ray table. Flightlib owns dynamics, collision queries and episode resets. Newton 1.6.1 renders the gate and room boxes with a directional light and shadows. The full-resolution packed color and optional forward depth stay on the device. This fixture tests timing and geometry. Photometric equivalence to an FPV camera or Isaac remains unqualified.
+The optional renderer uses one shared static scene, one aircraft and camera per environment, and one shared pinhole ray table. Flightlib owns dynamics, collision queries and episode resets. Newton 1.6.1 renders the gate and room boxes with a directional light and shadows. The full-resolution packed color and optional forward depth stay on the device. This fixture tests timing and geometry. Photometric equivalence to an FPV camera or Isaac remains unqualified.
 
 ## Run in the GPU dev container
 
@@ -23,7 +23,7 @@ Construct the environment without subscriptions and create the camera on the sam
 
 ```python
 with torch.cuda.stream(stream):
-    camera = TiledCamera(env.environments, device=env.device)
+    camera = TiledCamera(env.environments, device=env.device, scene=env.scene)
     camera.draw(env.state[:7].T)
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph, stream=stream):
@@ -76,7 +76,7 @@ On the RTX 5070 Ti, two runs per configuration in baseline/tiled/tiled/baseline 
 
 At one camera the warmed collector measured 3,469–3,474 transitions/s with the original traversal and 3,240–3,362 with tiles. These results apply to this GPU, Split-S geometry and 256×192 shadowed RGB workload.
 
-Across five timing rounds at 256 varied fixed poses, the shadowed renderer took 5.104 ms per batch with pixel-priority traversal and 2.693 ms with 16�8 tiles at 64 threads/block. All 20 shadowed configurations produced byte-identical RGB. Reducing the tiled block to 32 threads gave 2.662 ms, a 1% difference on this workload. Disabling shadows for diagnosis gave 2.343 ms at 64 threads. The default retains shadows and Newton's 64-thread block. A separate Nsight trace on the fixed-action simulation workload measured 2.78 ms per render kernel (96.6% of kernel time) and one graph launch per tick.
+Across five timing rounds at 256 varied fixed poses, the shadowed renderer took 5.104 ms per batch with pixel-priority traversal and 2.693 ms with 16×8 tiles at 64 threads/block. All 20 shadowed configurations produced byte-identical RGB. Reducing the tiled block to 32 threads gave 2.662 ms, a 1% difference on this workload. Disabling shadows for diagnosis gave 2.343 ms at 64 threads. The default retains shadows and Newton's 64-thread block. A separate Nsight trace on the fixed-action simulation workload measured 2.78 ms per render kernel (96.6% of kernel time) and one graph launch per tick.
 
 ## PPO batch size and VRAM
 
@@ -91,3 +91,36 @@ Each PPO epoch visits every rollout sample. With four epochs this configuration 
 The benchmark reports peak PyTorch allocated and reserved memory in MiB. The renderer also owns Warp device allocations. For total board usage, start `nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 50` before launching a fresh process and take the maximum observed sample through process exit. The board reading includes desktop usage. Sampling can miss short-lived peaks.
 
 At 256×192 the reusable packed framebuffer costs 192 KiB per camera. At a 32-step horizon the PPO observation history costs another 96 KiB per camera (3×16×16 pooled float32 observations). Scene geometry and intrinsics are shared. A learner storing full-resolution RGB8 history would need 4.5 MiB per camera for that history alone at the same horizon.
+
+## Using authored scenes
+
+Install optional readers with `python -m pip install PyYAML usd-core`. The installed Python package exposes the camera. Construct it on the recording stream and share the environment's imported scene.
+
+```python
+import torch
+from flightlib_cuda import Environment
+from flightlib_cuda.camera import TiledCamera
+
+stream = torch.cuda.Stream()
+with torch.cuda.stream(stream):
+    env = Environment(256, 1, scene="warehouse.usdc", collision_radius=0.125,
+                      terminate_on_collision=True)
+    env.reset_state[2].fill_(2)
+    env.reset()
+    camera = TiledCamera(256, device=env.device, scene=env.scene)
+```
+
+| Source | Camera geometry | Swept collision geometry |
+| --- | --- | --- |
+| Unity Force Text `.unity` or `.prefab` | Enabled MeshRenderers using the built-in cube, neutral color | Active, enabled, solid BoxColliders with composed transforms and local centers |
+| Unity Editor bake `.flightcourse` | Static MeshFilter triangle submeshes and flat base colors, with resolved prefab placements and overrides | Active, enabled, solid BoxColliders |
+| OpenUSD `.usd`, `.usda`, `.usdc`, `.usdz` | Visible default/render-purpose cubes and triangle meshes, first display color per prim | Enabled CollisionAPI cubes, including invisible proxy cubes |
+| Packaged `room`, `split_s` or v1 box course | Instanced room and gate boxes | Same boxes |
+
+Collision proxies must remain upright with orthogonal axes and positive extents after world transformation. Use multiple boxes for complex obstacles. Visual meshes can have arbitrary static orientations. The CPU imports assets at construction. Newton builds one visual scene and Flightlib caches the CUDA collision BVH.
+
+For Unity scenes with linked prefabs, external meshes or material colors, install Unity's `com.unity.nuget.newtonsoft-json` package and copy [FlightmareCourseExporter.cs](../course_assets/UnityExport/Editor/FlightmareCourseExporter.cs) into `Assets/Editor`. Use **Tools / Flightmare / Export active scene** or select a prefab and use **Assets / Flightmare / Export selected prefab**. Save the baked file outside the Unity Assets folder and load it in Flightlib. Bake terrain, skinned meshes and LODs to static meshes and author explicit box colliders. The camera uses flat colors. Textures and shader graphs are outside this path.
+
+For Isaac-authored USD, resolve asset references, triangulate render meshes and author static collision cubes. OpenUSD composes references and native instances. The loader converts Y/Z up and stage units. Newton renders mesh control vertices and flat display colors. Bake subdivision and point instancers before importing.
+
+The [Unity wall fixture](../course_assets/wall.prefab) offsets its visible surface from its collider. Run `$PY -m pytest -q tools/newton/test_scene_import.py` to check both in CUDA graph replay. Run `$PY tools/newton/bench_newton.py --envs 256 --scene flightlib-cuda/python/flightlib_cuda/assets/split_s.usda` for the PPO benchmark. Its starting poses assume Split-S. Set appropriate reset poses for other assets in your environment.
