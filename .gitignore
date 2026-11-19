@@ -9,7 +9,6 @@ __pycache__/
 
 # CMake, Ninja, and CUDA build outputs
 build/
-!/flightlib/build/
 build-*/
 cmake-build-*/
 CMakeUserPresets.json

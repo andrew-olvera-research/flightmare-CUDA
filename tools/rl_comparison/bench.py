@@ -5,7 +5,6 @@ import hashlib
 import json
 from pathlib import Path
 import statistics
-import sys
 import time
 
 import numpy as np

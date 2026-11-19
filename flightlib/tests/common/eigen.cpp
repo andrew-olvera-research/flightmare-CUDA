@@ -5,11 +5,6 @@
 
 using namespace flightlib;
 
-TEST(EigenChecks, EigenVersionOutput) {
-  std::printf("Eigen Version: %d.%d.%d\n", EIGEN_WORLD_VERSION,
-              EIGEN_MAJOR_VERSION, EIGEN_MINOR_VERSION);
-}
-
 TEST(EigenChecks, EigenQuaternionSequence) {
   Quaternion q1, q2;
 
