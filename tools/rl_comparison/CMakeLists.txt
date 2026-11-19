@@ -15,7 +15,7 @@ set(inc "${CMAKE_CURRENT_BINARY_DIR}/course_instrumented.inc")
 add_custom_command(OUTPUT "${inc}" COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/instrument.py" "${root}" "${inc}"
   DEPENDS instrument.py "${root}/flightlib/src/objects/quadrotor.cpp" "${root}/flightlib/src/envs/quadrotor_env/quadrotor_env.cpp")
 add_library(course_profile SHARED cpu_course.cpp "${inc}")
-set(PROFILE_BUILD /build/flightmare-profile CACHE PATH "Existing optimized baseline build")
+set(PROFILE_BUILD /build/v3-profile CACHE PATH "Existing optimized baseline build")
 target_compile_features(course_profile PRIVATE cxx_std_17)
 target_include_directories(course_profile PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${root}/flightlib/include"
   "${root}/flightlib-cuda/include" "${root}/flightlib-cuda/src" ${OpenCV_INCLUDE_DIRS} ${CUDAToolkit_INCLUDE_DIRS})

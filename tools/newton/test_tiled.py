@@ -6,7 +6,7 @@ import pytest
 import torch
 import warp as wp
 from flightlib_cuda.scene import load_boxes
-from tiled import TiledCamera
+from flightlib_cuda.camera import TiledCamera
 
 
 def expected_depth(boxes, pose, w, h):

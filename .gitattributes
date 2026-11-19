@@ -1,5 +1,4 @@
 /docker/*.sh text eol=lf
-/scripts/setup-isaac-renderer.sh text eol=lf
 
 /scripts/install-headless.sh text eol=lf
 /scripts/setup-cuda-python.sh text eol=lf

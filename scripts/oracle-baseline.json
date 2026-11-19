@@ -58,12 +58,12 @@
     "flightlib/src/sensors/rgb_camera.cpp": "4dda4b08bc528e5b808c653b91575bb06971c1e5419cc7ad64a3553f742f47d2",
     "flightlib/src/sensors/sensor_base.cpp": "1ae861edeb3e9812ceeb9006278e4772627312d59bbbbb0c5f1fd192f37a9612",
     "flightlib/src/wrapper/pybind_wrapper.cpp": "76f385808cb134ee4863ad9c81ebecccaeeb8e3b4fedb753badfd1ec6baa14de",
-    "flightmare-parity-tests/CMakeLists.txt": "a3b4c85ed35a4a3a0f68acfd5d02d2e48b79a0f8d7c2a42b3f81287db096362d",
-    "flightmare-parity-tests/dynamics_test.cpp": "f6ff1e94ab58601b437ae2c5d52618cd3777da92ee5677939a60af60f5885021",
-    "flightmare-parity-tests/env_test.cpp": "8e2400d2b7bd12fec6c48e58087ae77378d763216fa6aec05cd2a2e8592b04cd",
-    "flightmare-parity-tests/oracle.cpp": "b6bc6f357c2c5770e3db6a23a1b95bc5d8ef240c7f9691299167abafd2bd0b57",
-    "flightmare-parity-tests/oracle.hpp": "26d9b4b38560733a8602abbfea9b015ce102dd75bfdaea391096c08a45b818a7",
-    "flightmare-parity-tests/quadrotor_test.cpp": "6ceebbb7bd165ebdcf2d8f1065a6317e0f90dbe4aa26fd92dc593ab182110468",
-    "flightmare-parity-tests/trace_main.cpp": "e773250d0825195cf353c992743e686c8166c9f2cb087a479ed63240d0f1417e"
+    "tests/parity/CMakeLists.txt": "b9b6d960b2c40a1ea7cfe06bb58ce514b461bc36185192fba8e9b614d5078c6a",
+    "tests/parity/dynamics_test.cpp": "f6ff1e94ab58601b437ae2c5d52618cd3777da92ee5677939a60af60f5885021",
+    "tests/parity/env_test.cpp": "8e2400d2b7bd12fec6c48e58087ae77378d763216fa6aec05cd2a2e8592b04cd",
+    "tests/parity/oracle.cpp": "b6bc6f357c2c5770e3db6a23a1b95bc5d8ef240c7f9691299167abafd2bd0b57",
+    "tests/parity/oracle.hpp": "26d9b4b38560733a8602abbfea9b015ce102dd75bfdaea391096c08a45b818a7",
+    "tests/parity/quadrotor_test.cpp": "6ceebbb7bd165ebdcf2d8f1065a6317e0f90dbe4aa26fd92dc593ab182110468",
+    "tests/parity/trace_main.cpp": "e773250d0825195cf353c992743e686c8166c9f2cb087a479ed63240d0f1417e"
   }
 }

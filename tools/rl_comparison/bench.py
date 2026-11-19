@@ -12,8 +12,7 @@ import numpy as np
 import torch
 from world import CpuWorld, CudaWorld, prepare
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "isaac"))
-from bench_fpv import run_ppo
+from ppo import run_ppo
 
 
 def preflight():

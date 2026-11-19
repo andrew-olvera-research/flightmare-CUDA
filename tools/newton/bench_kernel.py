@@ -6,7 +6,7 @@ from statistics import median
 
 import torch
 from newton.sensors import SensorTiledCamera
-from tiled import TiledCamera
+from flightlib_cuda.camera import TiledCamera
 
 
 def sweep(count, repeats, ticks):

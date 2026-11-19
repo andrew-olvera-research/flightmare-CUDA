@@ -9,7 +9,7 @@ import warp as wp
 
 from flightlib_cuda import Environment
 from flightlib_cuda.scene import load_scene
-from tiled import TiledCamera
+from flightlib_cuda.camera import TiledCamera
 
 WALL = Path(__file__).resolve().parents[1] / "course_assets/wall.prefab"
 

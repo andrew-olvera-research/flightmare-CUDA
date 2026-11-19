@@ -1,11 +1,8 @@
 """Matched benchmark producers for single-aircraft course RL (CPU OpenMP / CUDA)."""
 
-import argparse
 import ctypes as ct
 from importlib.resources import files
-import json
 from pathlib import Path
-import sys
 import tempfile
 
 import numpy as np
@@ -170,42 +167,3 @@ def prepare(world, n, queries):
         raise RuntimeError("expected only the swept gate crossing")
     if isinstance(world, CudaWorld) and world.channel:
         world.packet()
-
-
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("envs", type=int)
-    p.add_argument("backend", choices=("cpu", "cuda"))
-    p.add_argument("workers", type=int)
-    p.add_argument("queries", type=int)
-    args = p.parse_args()
-    world = (
-        CpuWorld(args.envs, args.workers, bool(args.queries))
-        if args.backend == "cpu"
-        else CudaWorld(args.envs, bool(args.queries))
-    )
-    try:
-        prepare(world, args.envs, args.queries)
-        print("CUDA15_PRODUCER_READY", flush=True)
-        for line in sys.stdin:
-            actions = json.loads(line)
-            if actions is None:
-                result = int(world.counts)
-            else:
-                world.advance(actions)
-                valid = (
-                    world.valid.tolist()
-                    if isinstance(world, CudaWorld)
-                    else [1] * args.envs
-                )
-                result = [
-                    world.packet(),
-                    [world.rew.tolist(), world.done.tolist(), valid],
-                ]
-            print(json.dumps(result), flush=True)
-    finally:
-        world.close()
-
-
-if __name__ == "__main__":
-    main()

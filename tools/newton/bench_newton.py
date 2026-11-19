@@ -1,4 +1,4 @@
-"""Collision-enabled single-aircraft FPV PPO, using the in-process Newton prototype."""
+"""Collision-enabled single-aircraft FPV PPO, using the in-process Newton camera."""
 
 import argparse
 import json
@@ -9,11 +9,11 @@ import time
 import torch
 import torch.nn.functional as F
 from flightlib_cuda.transport import Backpressure
-from tiled import TiledCamera
+from flightlib_cuda.camera import TiledCamera
 
-sys.path.append(str(Path(__file__).resolve().parents[1] / "isaac"))
-from bench_fpv import run_ppo
-from rollout_fixture import RacingWorld
+sys.path.append(str(Path(__file__).resolve().parents[1] / "rl_comparison"))
+from ppo import run_ppo
+from racing_world import RacingWorld
 
 
 def benchmark(count, args):

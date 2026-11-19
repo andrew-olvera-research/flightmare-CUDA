@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 — simulator-focused layout
+
+- Newton's `flightlib_cuda.camera.TiledCamera` is the supported camera backend. Unity and OpenUSD assets still load for rendering and collisions. The separate Isaac Sim/Kit adapter and legacy application examples are available at tag `v0.2.0`.
+- Keep the standalone CPU library and binding for parity. Move the differential suite to `tests/parity` and developer profiling to `tools/profile`. Only the oracle build file's relative source path and corresponding manifest entry changed. State equations and reference test inputs are unchanged.
+
 ## 0.2.0 — Collision queries, FPV rendering and flight software validation
 
 - Provide a single Compose installer for the CUDA simulator and optional RL package, with Python and CMake consumers using the same environment.

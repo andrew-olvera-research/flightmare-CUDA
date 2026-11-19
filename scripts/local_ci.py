@@ -47,7 +47,7 @@ def fingerprint(root=ROOT):
 
 def oracle_files(root=ROOT):
     prefixes = ('flightlib/src/', 'flightlib/include/', 'flightlib/configs/',
-                'flightmare-parity-tests/')
+                'tests/parity/')
     return [p for p in source_files(root)
             if p.startswith(prefixes) or p == 'flightlib/CMakeLists.txt']
 
@@ -128,23 +128,23 @@ def execute(profile, runner):
         runner.ctest('contracts', '/build/flightlib-cuda-contracts')
     if profile == 'verify':
         # Build the binding against the SAME oracle library, not a second build.
-        runner.cmake('parity', 'flightmare-parity-tests', '/build/flightmare-parity-tests',
+        runner.cmake('parity', 'tests/parity', '/build/v3-parity',
                      targets=['flightmare_parity_tests', 'flightmare_oracle_trace', 'flightgym'])
-        runner.ctest('parity', '/build/flightmare-parity-tests')
+        runner.ctest('parity', '/build/v3-parity')
         runner.cmake('lifecycle', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
                      ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
-                      '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/flightmare-parity-tests/flightlib/libflightlib.a',
+                      '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/v3-parity/flightlib/libflightlib.a',
                       *cuda_options], targets=['lifecycle_test', 'dynamics_test', 'environment_test'])
         runner.run('lifecycle-parity', ['ctest', '--test-dir', '/build/flightlib-cuda-contracts',
                    '-R', '^flightlib_cuda.(lifecycle|dynamics|environment)_parity$', '--no-tests=error',
                    '--output-on-failure', '--output-junit', str(runner.directory / 'lifecycle.xml')])
         # Eigen packet intrinsics can differ from scalar math even with strict
         # FP flags. Qualify the actual optimized CPU comparison, including rewards.
-        runner.cmake('optimized-cpu', 'flightmare-profile/native', '/build/flightmare-profile',
+        runner.cmake('optimized-cpu', 'tools/profile/native', '/build/v3-profile',
                      ['-DPROFILE_CPU_BASELINE=ON', *cuda_options],
                      targets=['cpu_baseline', 'cpu_environment_parity', 'cpu_environment'])
         for name in ('cpu_baseline', 'cpu_environment_parity'):
-            runner.run(name, [f'/build/flightmare-profile/{name}'],
+            runner.run(name, [f'/build/v3-profile/{name}'],
                        env=dict(os.environ, FLIGHTMARE_PATH=str(ROOT)))
         cuda_python = '/build/flightlib-cuda-python/bin/python'
         if not Path(cuda_python).exists():
@@ -158,7 +158,7 @@ def execute(profile, runner):
         runner.run('rl-build', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation', '-e', 'flightrl-cuda'])
         runner.run('rl-acceptance', [cuda_python, '-m', 'pytest', '-q', 'flightrl-cuda/tests',
                    f'--junitxml={runner.directory / "rl.xml"}'],
-                   env=dict(os.environ, PYTHONPATH='/workspace/flightrl-cuda:/workspace/flightmare-profile:/build/flightlib-cuda-python-native/python'))
+                   env=dict(os.environ, PYTHONPATH='/workspace/flightrl-cuda:/workspace/tools/profile:/build/flightlib-cuda-python-native/python'))
         # Install to a fresh destination so stale source/build imports cannot
         # masquerade as a complete standalone package.
         install = runner.directory / 'installed'
@@ -186,11 +186,6 @@ def execute(profile, runner):
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         runner.run('installed-transport-example', [cuda_python, '-m', 'flightrl_cuda.transport_example'],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
-        runner.run('isaac-adapter-install', [cuda_python, '-m', 'pip', 'install', '--no-deps',
-                   '--no-build-isolation', '--target', str(install), './flightmare-isaac'])
-        runner.run('installed-camera-contract', [cuda_python, '-m', 'pytest', '-q',
-                   str(ROOT/'flightmare-isaac/tests'), f'--junitxml={runner.directory / "camera-contract.xml"}'],
-                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
         runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',
@@ -200,7 +195,7 @@ def execute(profile, runner):
         runner.cmake('installed-native', 'flightlib-cuda/examples/native', str(runner.directory/'consumer'),
                      [f'-DCMAKE_PREFIX_PATH={install}'])
         runner.run('installed-native-consumer', [str(runner.directory/'consumer/core_consumer')])
-        env = dict(os.environ, PYTHONPATH='/build/flightmare-parity-tests/flightlib')
+        env = dict(os.environ, PYTHONPATH='/build/v3-parity/flightlib')
         runner.run('binding', [sys.executable, '-m', 'pytest', '-q',
                                'docker/smoke/test_flightgym.py',
                                f'--junitxml={runner.directory / "binding.xml"}'], env=env)
@@ -226,7 +221,7 @@ def execute(profile, runner):
         execute('verify', runner)
         targets = ('runtime_test', 'guarded_test', 'lifecycle_test', 'dynamics_test', 'environment_test')
         env = dict(os.environ, FLIGHTMARE_PATH=str(ROOT),
-                   PYTHONPATH='/workspace/flightrl-cuda:/workspace/flightmare-profile:/build/flightlib-cuda-python-native/python')
+                   PYTHONPATH='/workspace/flightrl-cuda:/workspace/tools/profile:/build/flightlib-cuda-python-native/python')
         for tool in ('memcheck', 'racecheck', 'initcheck', 'synccheck'):
             prefix = ['compute-sanitizer', '--tool', tool, '--error-exitcode', '1']
             for target in targets:
@@ -237,12 +232,12 @@ def execute(profile, runner):
                        'flightrl-cuda/tests/test_rl.py', '-k',
                        'gae_terminal or nondefault_stream or ppo_update_checkpoint'], env=env, timeout=900)
     elif profile == 'ubsan':
-        runner.cmake('oracle', 'flightmare-parity-tests', '/build/flightmare-parity-tests',
+        runner.cmake('oracle', 'tests/parity', '/build/v3-parity',
                      targets=['flightlib'])
         runner.cmake('ubsan', 'flightlib-cuda', '/build/flightlib-cuda-ubsan', [
             '-DCMAKE_BUILD_TYPE=RelWithDebInfo',
             '-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
-            '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/flightmare-parity-tests/flightlib/libflightlib.a',
+            '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=/build/v3-parity/flightlib/libflightlib.a',
             '-DCMAKE_CXX_FLAGS=-Wall -Wextra -Wpedantic -fsanitize=undefined -fno-omit-frame-pointer',
             '-DCMAKE_CUDA_FLAGS=-lineinfo -Xcompiler=-fsanitize=undefined -Xcompiler=-fno-omit-frame-pointer',
             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=undefined', *cuda_options])

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def test_frozen_cpu_traces_through_public_api():
     trace = json.loads(subprocess.check_output(
-        ['/build/flightmare-parity-tests/flightmare_oracle_trace'],
+        ['/build/v3-parity/flightmare_oracle_trace'],
         env=dict(os.environ, FLIGHTMARE_PATH=str(ROOT)), text=True))
     # Constant-schedule scenarios replay end to end. The variable-capacity motor
     # scenario remains in native parity; resizing is not a frozen-runtime API.
