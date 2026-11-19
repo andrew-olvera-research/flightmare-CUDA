@@ -77,3 +77,17 @@ On the RTX 5070 Ti, two runs per configuration in baseline/tiled/tiled/baseline 
 At one camera the warmed collector measured 3,469–3,474 transitions/s with the original traversal and 3,240–3,362 with tiles. These results apply to this GPU, Split-S geometry and 256×192 shadowed RGB workload.
 
 Across five timing rounds at 256 varied fixed poses, the shadowed renderer took 5.104 ms per batch with pixel-priority traversal and 2.693 ms with 16�8 tiles at 64 threads/block. All 20 shadowed configurations produced byte-identical RGB. Reducing the tiled block to 32 threads gave 2.662 ms, a 1% difference on this workload. Disabling shadows for diagnosis gave 2.343 ms at 64 threads. The default retains shadows and Newton's 64-thread block. A separate Nsight trace on the fixed-action simulation workload measured 2.78 ms per render kernel (96.6% of kernel time) and one graph launch per tick.
+
+## PPO batch size and VRAM
+
+To reproduce a 32,768-transition update with 1,024 cameras, 32 steps and 8,192 samples per optimizer minibatch:
+
+```sh
+$PY tools/newton/bench_newton.py --envs 1024 --steps 32 --minibatches 4
+```
+
+Each PPO epoch visits every rollout sample. With four epochs this configuration takes 16 optimizer steps per rollout. To hold optimizer minibatch size fixed while scaling the environment count, set `--minibatches` to `envs * steps / minibatch_size` for evenly divisible sizes. Compare warmed collection and training rates using the last three entries of `collection_s` and `update_s` for the default four rollouts.
+
+The benchmark reports peak PyTorch allocated and reserved memory in MiB. The renderer also owns Warp device allocations. For total board usage, start `nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -lms 50` before launching a fresh process and take the maximum observed sample through process exit. The board reading includes desktop usage. Sampling can miss short-lived peaks.
+
+At 256×192 the reusable packed framebuffer costs 192 KiB per camera. At a 32-step horizon the PPO observation history costs another 96 KiB per camera (3×16×16 pooled float32 observations). Scene geometry and intrinsics are shared. A learner storing full-resolution RGB8 history would need 4.5 MiB per camera for that history alone at the same horizon.

@@ -80,6 +80,8 @@ def benchmark(count, args):
         result.update(
             renderer="Newton SensorTiledCamera",
             resolution=[256, 192],
+            torch_peak_allocated_mib=torch.cuda.max_memory_allocated() / 2**20,
+            torch_peak_reserved_mib=torch.cuda.max_memory_reserved() / 2**20,
             mode=args.mode,
             render_order=camera.camera.default_render_config.render_order.name,
             pose_host_bytes=world.channel.stats["host_bytes"] if world.channel else 0,
@@ -92,7 +94,15 @@ def benchmark(count, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--envs", type=int, required=True)
-    parser.set_defaults(steps=32, rollouts=4, epochs=4, minibatches=4, warmup=24)
+    parser.set_defaults(epochs=4, warmup=24)
+    parser.add_argument("--steps", type=int, default=32)
+    parser.add_argument("--rollouts", type=int, default=4)
+    parser.add_argument(
+        "--minibatches",
+        type=int,
+        default=4,
+        help="optimizer minibatches per rollout epoch",
+    )
     parser.add_argument("--mode", choices=("graph", "subscription"), default="graph")
     parser.add_argument(
         "--profile-ticks",
@@ -106,5 +116,10 @@ if __name__ == "__main__":
         help="use baseline cross-view pixel traversal for A/B comparisons",
     )
     args = parser.parse_args()
+    if (
+        min(args.envs, args.steps, args.rollouts, args.minibatches) < 1
+        or args.minibatches > args.envs * args.steps
+    ):
+        parser.error("positive sizes required, with at least one sample per minibatch")
     with torch.cuda.stream(torch.cuda.Stream()):
         print(json.dumps(benchmark(args.envs, args)))
