@@ -13,7 +13,7 @@ Post-CUDA-6 review: the [parallel CPU baseline](cpu-parallel-performance.md)
 supports retaining the resident/fused architecture. The current milestone is
 reproduction of the scoped Flightlib core, not new geometry or an RL framework.
 The [current scope and remaining layers](flightlib-scope.md) supersede the earlier
-[collision-first proposal](cuda7-collision-plan.md) and the historical geometry
+[collision-first proposal](history/cuda7-collision-plan.md) and the historical geometry
 implementation sequence below. CUDA-7 completes state/numerical parity; CUDA-8
 completes the resident core API/package; CUDA-9 qualifies that package. Rendering,
 sensor/scene fidelity, collision detection and the RL wrapper are later work.
@@ -786,7 +786,7 @@ comparison and separate launch/transfer traces. See [CUDA-8 evidence](cuda8-vali
 
 ## CUDA-9 implemented usage and RL layer
 
-The [usage/RL plan](cuda9-usage-plan.md) supersedes the earlier wrapper deferral.
+The [usage/RL plan](history/cuda9-usage-plan.md) supersedes the earlier wrapper deferral.
 `flightrl_cuda` now composes Environment with tensor vector APIs, one fused
 episode-statistics kernel and resident rollout history. Separate policy graphs
 feed the existing three-node simulation graph. GAE uses one thread per lane and

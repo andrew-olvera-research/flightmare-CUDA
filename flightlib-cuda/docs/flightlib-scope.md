@@ -13,7 +13,7 @@ world-box constraints and diagnostics. Preserve legacy quirks. Keep existing
 task/observation/reward/reset coverage and Python Environment integration.
 CUDA-9 now extends the final scope to headless usage and RL wrappers, resident
 rollout collection and a train/evaluate example; see the
-[CUDA-9 usage plan](cuda9-usage-plan.md). This supersedes the earlier RL deferral.
+[CUDA-9 usage plan](history/cuda9-usage-plan.md). This supersedes the earlier RL deferral.
 
 Behavioral fidelity to this reference is separate from adding physical fidelity.
 No new aerodynamics, collision response or replacement physics engine is implied.
@@ -59,7 +59,7 @@ require rebuilding the simulator.
 
 - Scene assets and instances, body proxies, overlap/ray queries, broad/narrow
   phase, containment/touching/overflow rules and backend selection. The earlier
-  [collision plan](cuda7-collision-plan.md) is retained as a historical design
+  [collision plan](history/cuda7-collision-plan.md) is retained as a historical design
   resource, not a current implementation instruction or Unity-equivalence claim.
 - Rendering overhaul, scene fidelity and sensors, including timing/state exchange.
 - Shared swarm rewards/termination, distributed learning, a general RL algorithm

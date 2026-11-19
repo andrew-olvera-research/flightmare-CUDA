@@ -9,7 +9,7 @@ CUDA-8 completion: the API gaps recorded in this checkpoint are now exposed by
 the [resident Core API and complete public-method checklist](core-api.md),
 including optional low-level helpers and external size/collision metadata.
 CUDA-9 now plans the final headless usage/RL layer in
-[cuda9-usage-plan.md](cuda9-usage-plan.md), superseding the wrapper deferral in
+[cuda9-usage-plan.md](history/cuda9-usage-plan.md), superseding the wrapper deferral in
 this historical CUDA-7 matrix. The numerical and randomization boundaries below remain authoritative. The
 table's CUDA-8 references describe the original audit handoff, not current gaps.
 

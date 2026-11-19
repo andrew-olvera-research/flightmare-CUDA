@@ -24,6 +24,7 @@ def collect(env, policy, steps):
         action = policy(obs)
         history["action"][t].copy_(action)
         result = env.step(action)
+        # Step outputs borrow storage. Save this tick before the next step overwrites it.
         for name in ("transition_observation", "reward", "done", "valid"):
             history[name][t].copy_(getattr(result, name))
         obs = result.observation  # The next policy input includes any reset.

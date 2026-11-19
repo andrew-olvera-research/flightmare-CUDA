@@ -1,6 +1,6 @@
 # Kernel optimization analysis — v0.1.2 baseline
 
-The later [directed diagnostic campaign](kernel-diagnostic-findings.md) narrows
+The later [directed diagnostic campaign](../kernel-diagnostic-findings.md) narrows
 the next implementation to shared state traversal in preparation/dynamics fusion.
 Its measurements supersede the tentative experiment ordering below.
 
@@ -117,7 +117,7 @@ conversion is a candidate for that stack/call cost; inspect generated code and
 measure fallback frequency before attributing time to it.
 
 Higher occupancy is not automatically faster. A prior 128-register cap introduced
-spills and did not improve timing consistently; see [CUDA-4 evidence](cuda4-performance.md).
+spills and did not improve timing consistently; see [CUDA-4 evidence](../cuda4-performance.md).
 Prefer reducing live intermediates/redundant work before imposing a register cap.
 The [Blackwell resource limits](https://docs.nvidia.com/cuda/blackwell-tuning-guide/)
 and [occupancy guidance](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/)

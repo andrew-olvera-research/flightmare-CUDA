@@ -8,7 +8,7 @@ below remains a compatibility consumer with unchanged task semantics.
 
 CUDA-6 exposes the existing Flightlib CUDA environment through PyTorch tensors.
 Physics, task semantics and the v1 tensor contract are unchanged. The extension
-uses pybind11 and DLPack without linking libtorch. Version: 0.1.0.
+uses pybind11 and DLPack without linking libtorch. The package version follows the repository-root `VERSION`.
 
 ## Build locally
 

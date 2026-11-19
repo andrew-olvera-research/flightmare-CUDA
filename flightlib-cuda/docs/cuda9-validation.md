@@ -1,7 +1,7 @@
 # CUDA-9: resident RL implementation and validation
 
 This checkpoint implements the headless usage/RL layer at 0.1.0, following the
-[plan](cuda9-usage-plan.md) and [implemented contracts](cuda9-usage-contract.md).
+[plan](history/cuda9-usage-plan.md) and [implemented contracts](cuda9-usage-contract.md).
 Public README/migration presentation and clean release qualification are deferred
 to the next turn. No tag, push or publication is part of this checkpoint.
 

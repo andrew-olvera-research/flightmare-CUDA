@@ -2,8 +2,8 @@
 
 Status: usage/RL implementation and benchmark milestone implemented, version 0.1.0.
 Baseline: CUDA-8 commit e01d077; planning checkpoint 23082b9.
-See [implemented contracts/method mapping](cuda9-usage-contract.md) and
-[validation/performance evidence](cuda9-validation.md). Tensor/host wrappers,
+See [implemented contracts/method mapping](../cuda9-usage-contract.md) and
+[validation/performance evidence](../cuda9-validation.md). Tensor/host wrappers,
 scalar and lane-zero execution, configuration/seed lifecycle, resident collection,
 GAE/PPO, save/load/evaluation and installed-package checks are implemented.
 The public README/migration presentation and clean release qualification remain
@@ -209,5 +209,5 @@ ROS/PX4/SITL, new physical models/platforms, team tasks, distributed training,
 automatic TensorFlow checkpoint conversion and a general RL algorithm library.
 Legacy already-unimplemented APIs are labeled, not silently advertised as parity.
 
-Dependencies: [core API](core-api.md), [numerical contract](flightlib-support.md),
-[scope](flightlib-scope.md), [local validation](../../docs/local-development.md).
+Dependencies: [core API](../core-api.md), [numerical contract](../flightlib-support.md),
+[scope](../flightlib-scope.md), [local validation](../../../docs/local-development.md).

@@ -1,10 +1,6 @@
 # Local validation and versioning
 
-The rewrite starts at **0.1.0**. Root `VERSION` drives the CUDA package's CMake
-version. Contract schema v1 is a separate compatibility identifier. Frozen
-upstream package/ROS metadata keeps its historical version; it is not the
-rewrite release identifier. All validation runs in the existing Compose dev
-container. No GitHub workflows, hosted runners, installed hooks, or new services.
+The root `VERSION` sets the CUDA CMake package version. Contract schema v1 and the upstream reference packages have their own version numbers. The commands below run in the Compose dev container.
 
 ## Commands
 
@@ -100,7 +96,7 @@ detects it. Prefer a small boundary fixture over declarations repeated as tests.
 | Harness tests | fast: process failures/timeouts, oracle tampering, untracked source fingerprints |
 
 The CPU suite validates the **CPU reference**, not CPU/GPU dynamics parity.
-As kernels arrive, run the same oracle inputs through CUDA and compare complete
+The differential tests run the same oracle inputs through CUDA and compare complete
 state, motors, time, observations, reward, and terminal/reset behavior in verify.
 Independently passing CPU and GPU suites does not establish parity.
 
@@ -164,11 +160,6 @@ Keep VERSION unchanged during ordinary commits. For a checkpoint:
    semantics also require a new contract version/namespace and migration notes.
 2. Run verify, inspect changes, and commit the intended checkpoint locally.
 3. Run `./scripts/check.ps1 release` on the clean commit.
-4. After success, create an annotated local tag at the exact reported commit:
-   `git tag -a v0.1.0 <reported-commit> -m "Flightlib CUDA 0.1.0"`.
-
-Never move an existing tag; use a new version for a new fix. Historical tags
-remain untouched. The harness never commits, tags, or pushes automatically.
-The current uncommitted baseline is VERSION=0.1.0; tag it after the intended
-files are committed and release validation passes. No binary ABI promise is
-implied. When editing the harness itself, run fast and verify.
+4. Review the report's commit, GPU, toolchain, skipped tests and numerical results. Optional integrations have separate dependencies. For a candidate that changes them, run the [camera examples](../tools/newton/README.md), [DDS wire tests](../tools/ros2/README.md) and [PX4 lockstep qualification](../tools/px4/README.md).
+5. Before announcing a release, confirm that the README install and collector work at the chosen revision, the changelog describes the release, and bundled course assets retain their [source attribution](../flightlib-cuda/docs/cuda11-static-collision.md).
+6. When publishing, create an annotated tag for the version at the exact qualified commit and push that tag with the release notes. The harness leaves publication to the maintainer.

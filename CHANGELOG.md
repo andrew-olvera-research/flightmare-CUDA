@@ -1,7 +1,11 @@
 # Changelog
 
-## 0.2.0 — CUDA barometer and estimator integration
+## 0.2.0 — Collision queries, FPV rendering and flight software validation
 
+- Add shared box courses, continuous static and inter-agent collision queries, and a Split-S fixture. Load supported Unity and OpenUSD geometry for both contact queries and cameras.
+- Add resident collective-thrust/body-rate actions with per-plant tuning. A caller-owned CUDA graph can span policy evaluation, stepping and masked reset.
+- Add scheduled IMU and odometry packets, bounded pose and sensor subscriptions, and in-process tiled Newton FPV rendering.
+- Add a single-aircraft ROS 2 Jazzy bridge and a PX4 SITL lockstep runner with actuator feedback and EKF2 qualification.
 - Add per-lane absolute pressure packets with configurable reference atmosphere, mounting offset, bias, noise and acquisition/delivery timing.
 - Publish the same measurement through ROS 2 and the single-aircraft PX4 simulator link. Include a reproducible comparison with Cube Orange hardware data.
 
