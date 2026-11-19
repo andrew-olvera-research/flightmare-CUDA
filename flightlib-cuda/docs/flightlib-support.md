@@ -5,15 +5,7 @@ in [flightlib-scope.md](flightlib-scope.md). It preserves the Flightmare equatio
 it does not certify sim-to-real transfer, new physics, or every legacy class.
 The frozen Flightlib source and oracle hash manifest remain unchanged.
 
-CUDA-8 completion: the API gaps recorded in this checkpoint are now exposed by
-the [resident Core API and complete public-method checklist](core-api.md),
-including optional low-level helpers and external size/collision metadata.
-CUDA-9 now plans the final headless usage/RL layer in
-[cuda9-usage-plan.md](history/cuda9-usage-plan.md), superseding the wrapper deferral in
-this historical CUDA-7 matrix. The numerical and randomization boundaries below remain authoritative. The
-table's CUDA-8 references describe the original audit handoff, not current gaps.
-
-## Operation matrix
+The table below records the original core audit. Its numerical budgets and randomization boundaries apply to the tested workloads. For current interfaces see the [Core method mapping](core-api.md), [task API](cuda9-usage-contract.md) and [sensor, collision and rendering guides](../../README.md#choose-an-interface).
 
 | CPU source / operation | CUDA support | Evidence / remaining boundary |
 | --- | --- | --- |
@@ -101,13 +93,6 @@ coefficients scaled .85–1.15, and rate limits 2–8rad/s. YAML supplies the ad
 fast-motor case. Larger domains and longer open-loop trajectories require their
 own measured qualification before claiming equivalent training behavior.
 
-## Remaining layers
+## Reproducing the comparisons
 
-CUDA-8 now exposes native lifecycle/dynamics operations as a standalone resident
-core package, with model/motor/state access, optional helpers and explicit
-stream/ownership rules; the separate Core interface does not depend on the task
-API. CUDA-9 adds headless wrappers, resident RL usage and a training/evaluation
-example, then qualifies clean installation and the integrated checkpoint,
-including matched best-tested parallel CPU performance. Geometry, collision
-solvers, rendering, sensors and additional physical models remain deferred.
-See [CUDA-7 validation evidence](cuda7-validation.md).
+Run `docker compose exec -T dev python3 scripts/local_ci.py verify` in the prepared checkout. The report lists the frozen CPU, optimized CPU, native CUDA and Python checks. The [validation notes](cuda7-validation.md) describe the original measurements.

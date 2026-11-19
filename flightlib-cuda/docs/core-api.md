@@ -3,13 +3,13 @@
 `flightlib_cuda.Core` exposes the headless physical core independently of the
 existing task `Environment`. The C++ entry points are in `lifecycle.hpp`,
 `dynamics.hpp` and `operations.hpp`. Both use the same persistent arena, model
-tables, kernels and frozen v1 tensor semantics. Version remains 0.1.0.
+tables, kernels and frozen v1 tensor semantics.
 
 The [non-RL Python example](../python/examples/core.py) runs multiple environments
 and drones, commands/steps on device, edits selected state and explicitly exports
 a CPU snapshot. `verify` installs to a fresh directory, executes that example
 using the installed module, and builds/runs an independent C++ consumer through
-`find_package(flightlib_cuda CONFIG REQUIRED)` and `flightlib_cuda::runtime`.
+`find_package(flightlib_cuda 0.2 CONFIG REQUIRED)` and `flightlib_cuda::runtime`.
 
 ## Resident interface
 
@@ -137,7 +137,7 @@ Source anchors: [Quadrotor](../../flightlib/include/flightlib/objects/quadrotor.
 | `valid`, `updateParams`, `setMass`, `setArmLength`, `setMotortauInv`, `updateDynamics`, `setWorldBox` | Validated `ModelConfig`, `load_model`, `configure`; motor_tau is seconds (inverse of setter argument). Strict positive/finite setup domain remains documented in CUDA-7. |
 | derivative/controller/motor/conversion/clamp functions | Bound operations listed above; `getAllocationMatrix` is the parameter view. Collective minimum/maximum are four times the stored rotor thrust bounds. |
 | `getSize` / `setSize`, `getCollision` / `setCollision` | `size[3,N]` float32 and `collision[N]` bool, separate caller-writable scene metadata. Defaults ones/false; reset, step and configure leave them unchanged. They do not affect inertia, constraints or termination. |
-| cameras, Unity/ROS exchange, IMU/sensor outputs, rendering | Explicitly deferred to the rendering/sensor extension. No fake camera/collision engine result is produced. |
+| cameras, Unity/ROS exchange, IMU/sensor outputs, rendering | Use Environment and its [sensor, renderer and ROS adapters](../../README.md#choose-an-interface) for these operations. |
 | stream insertion / CPU object copies / STL callbacks | Python repr/object identity and C++ implementation details are not serialized ABI promises. Numerical/controller behavior is provided through the batched API above. |
 
 `collision` is external metadata, not the reserved geometry `collisions.hit/valid`
