@@ -63,7 +63,7 @@ void continuation() {
   drain(3,1,3,0,tick_ns);
 }
 
-int main(int argc, char** argv) {
+int measurement(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--saturation") {
     // 9 us submission cadence keeps the sender backlogged during recovery.
     // 32 disjoint replicate domains for each contender count.
@@ -107,12 +107,10 @@ int main(int argc, char** argv) {
     require(std::cin.eof());if(!masks.empty())replay();
     require(total>0);std::cout<<total<<"\n";return 0;
   }
-  if (argc == 2 && std::string(argv[1]) == "--continuation") {
-    continuation();
-    return 0;
-  }
-  require(argc == 1);
-  continuation();
+  return 2;
+}
+
+void collisions() {
   SharedChannel ch(2,2,5,{1,1,1,0,2,22});
   // Two simultaneous senders collide in medium 0. In medium 1 a broadcast
   // takes ten ns and delivers to two of three receivers.
@@ -134,6 +132,9 @@ int main(int argc, char** argv) {
   r = ch.results.read();
   require(r[3].completed && r[3].arrival==14 && r[3].receivers==1);
 
+}
+
+void wideBroadcast() {
   // One transmission addresses every other station across a block boundary.
   SharedChannel wide(1,257,10,{1,1,1,0,0,22});
   std::vector<Frame> frames(257);
@@ -145,10 +146,13 @@ int main(int argc, char** argv) {
   for(unsigned rx=0; rx<257; ++rx)
     require(receivedBy(broadcast,128,rx,257)==(rx!=128 && rx!=129));
 
+}
+
+void partition() {
   // Same offers, different idle advance boundaries, including partial slots.
   SharedProfile profile{7,16,1,3,4,42};
   SharedChannel whole(1,19,2000,profile), split(1,19,5,profile);
-  frames.assign(19,{8,1,0,0,17});
+  std::vector<Frame> frames(19,{8,1,0,0,17});
   whole.offers.upload(frames);
   split.offers.upload(frames);
   whole.run(nullptr);
@@ -161,4 +165,16 @@ int main(int argc, char** argv) {
             actual[i].finish==expected[i].finish &&
             actual[i].received_copies==expected[i].received_copies);
   }
+}
+
+int main(int argc, char** argv) {
+  if (argc > 2) return 2;
+  std::string name = argc == 1 ? "" : argv[1];
+  if (name == "--saturation" || name == "--broadcast-replay") return measurement(argc,argv);
+  if (name.empty() || name == "--continuation") continuation();
+  if (name.empty() || name == "--collisions") collisions();
+  if (name.empty() || name == "--broadcast") wideBroadcast();
+  if (name.empty() || name == "--partition") partition();
+  return name.empty() || name == "--continuation" || name == "--collisions" ||
+         name == "--broadcast" || name == "--partition" ? 0 : 2;
 }

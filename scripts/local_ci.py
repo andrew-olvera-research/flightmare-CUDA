@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT = ['git', '-c', 'core.filemode=false', '-c', 'core.autocrlf=true']
-PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan', 'network-parity')
+PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan',
+            'network-parity', 'network-api', 'network-health', 'network-performance')
 
 
 def capture(args, root=ROOT):
@@ -110,30 +111,53 @@ class Runner:
             command += ['--target', *targets]
         self.run(name + '-build', command)
 
-    def ctest(self, name, build):
-        self.run(name, ['ctest', '--test-dir', build, '--output-on-failure',
+    def ctest(self, name, build, filters=()):
+        self.run(name, ['ctest', '--test-dir', build, *filters, '--output-on-failure',
                         '--no-tests=error', '--timeout', '120', '--output-junit',
                         str(self.directory / f'{name}.xml')])
+
+
+NETWORK_TESTS = 'flightlib-cuda/python/tests'
+CUDA_PYTHON = '/build/flightlib-cuda-python/bin/python'
+
+
+def network_python(runner, lane, build):
+    filename = 'test_network_oracle.py' if lane == 'network-parity' else 'test_network.py'
+    runner.run(lane + '-python', [CUDA_PYTHON, '-m', 'pytest', '-q',
+               f'{NETWORK_TESTS}/{filename}', f'--junitxml={runner.directory / (lane + ".xml")}'],
+               env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+
+
+def network_native(runner, lane, build):
+    runner.run(lane + '-native', ['ctest', '--test-dir', build, '-L', f'^{lane}$',
+               '--output-on-failure', '--no-tests=error', '--output-junit',
+               str(runner.directory / (lane + '-native.xml'))])
+
+
+def network_check(lane, runner, cuda_options):
+    build = '/build/network-ci'
+    targets = {'network-parity': ['packet_test', '_native'],
+               'network-api': ['packet_test', 'shared_test', '_native'],
+               'network-health': ['packet_test'], 'network-performance': ['_native']}
+    runner.cmake('network', 'flightlib-cuda', build,
+                 ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
+                  '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
+                  f'-DPython_EXECUTABLE={CUDA_PYTHON}', *cuda_options], targets=targets[lane])
+    if lane == 'network-health':
+        runner.run('packet-lifecycle-soak', [f'{build}/packet_test', '--soak'])
+    elif lane == 'network-performance':
+        runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+    else:
+        network_native(runner, lane, build)
+        network_python(runner, lane, build)
 
 
 def execute(profile, runner):
     arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
     cuda_options = [f'-DCMAKE_CUDA_ARCHITECTURES={arch}']
-    if profile == 'network-parity':
-        build = '/build/network-ci'
-        python = '/build/flightlib-cuda-python/bin/python'
-        runner.cmake('network', 'flightlib-cuda', build,
-                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
-                      '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
-                      f'-DPython_EXECUTABLE={python}', *cuda_options],
-                     targets=['packet_test', '_native'])
-        runner.run('fifo-parity', ['ctest', '--test-dir', build, '-L', '^network-parity$',
-                   '--output-on-failure', '--no-tests=error', '--output-junit',
-                   str(runner.directory / 'native-parity.xml')])
-        runner.run('slot-parity', [python, '-m', 'pytest', '-q',
-                   'flightlib-cuda/python/tests/test_network_oracle.py',
-                   f'--junitxml={runner.directory / "slot-parity.xml"}'],
-                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+    if profile.startswith('network-'):
+        network_check(profile, runner, cuda_options)
         return
     if profile in ('fast', 'verify'):
         runner.run('harness', [sys.executable, '-m', 'unittest', 'discover',
@@ -141,7 +165,11 @@ def execute(profile, runner):
         runner.cmake('contracts', 'flightlib-cuda', '/build/flightlib-cuda-contracts',
                      ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
                       '-DFLIGHTLIB_CUDA_ORACLE_LIBRARY=', *cuda_options])
-        runner.ctest('contracts', '/build/flightlib-cuda-contracts')
+        build = '/build/flightlib-cuda-contracts'
+        runner.ctest('contracts', build, ['-LE', '^network-'] if profile == 'verify' else [])
+        if profile == 'verify':
+            for lane in ('network-parity', 'network-api'):
+                network_native(runner, lane, build)
     if profile == 'verify':
         # Build the binding against the SAME oracle library, not a second build.
         runner.cmake('parity', 'tests/parity', '/build/v3-parity',
@@ -168,9 +196,12 @@ def execute(profile, runner):
         runner.cmake('cuda-python', 'flightlib-cuda', '/build/flightlib-cuda-python-native',
                      ['-DBUILD_TESTING=OFF', '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON',
                       '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON', f'-DPython_EXECUTABLE={cuda_python}', *cuda_options])
-        runner.run('cuda-python-parity', [cuda_python, '-m', 'pytest', '-q',
-                   'flightlib-cuda/python/tests', f'--junitxml={runner.directory / "cuda-python.xml"}'],
+        runner.run('cuda-python', [cuda_python, '-m', 'pytest', '-q',
+                   NETWORK_TESTS, f'--ignore={NETWORK_TESTS}/test_network.py',
+                   f'--ignore={NETWORK_TESTS}/test_network_oracle.py', f'--junitxml={runner.directory / "cuda-python.xml"}'],
                    env=dict(os.environ, PYTHONPATH='/build/flightlib-cuda-python-native/python'))
+        for lane in ('network-parity', 'network-api'):
+            network_python(runner, lane, '/build/flightlib-cuda-python-native')
         runner.run('rl-build', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation', '-e', 'flightrl-cuda'])
         runner.run('rl-acceptance', [cuda_python, '-m', 'pytest', '-q', 'flightrl-cuda/tests',
                    f'--junitxml={runner.directory / "rl.xml"}'],

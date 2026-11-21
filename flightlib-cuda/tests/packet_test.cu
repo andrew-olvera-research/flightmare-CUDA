@@ -6,9 +6,7 @@
 #include <string>
 
 using namespace packet_fixture;
-void require(bool ok) {
-  if (!ok) throw std::runtime_error("packet timeline mismatch");
-}
+#define require(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
 // One lane per independent three-repetition measurement. Each loss must still
 // consume transmitter airtime. Artificial 1 ns ticks make the three sends queue.
 void replayBursts(const std::vector<unsigned>& masks) {
@@ -95,31 +93,25 @@ void fifoParity() {
   }
 }
 
-int main(int argc, char** argv) {
-  if (argc == 2 && std::string(argv[1]) == "--replay") {
-    std::vector<unsigned> masks;
-    char c;
-    size_t bursts = 0;
-    while (std::cin.get(c)) {
-      if (c < '0' || c > '7') throw std::invalid_argument("expected burst mask digit");
-      masks.push_back(static_cast<unsigned>(c-'0'));
-      ++bursts;
-      if (masks.size() == 4096) {
-        replayBursts(masks);
-        masks.clear();
-      }
+void replay() {
+  std::vector<unsigned> masks;
+  char c;
+  size_t bursts = 0;
+  while (std::cin.get(c)) {
+    if (c < '0' || c > '7') throw std::invalid_argument("expected burst mask digit");
+    masks.push_back(static_cast<unsigned>(c-'0'));
+    ++bursts;
+    if (masks.size() == 4096) {
+      replayBursts(masks);
+      masks.clear();
     }
-    require(std::cin.eof() && bursts);
-    if (!masks.empty()) replayBursts(masks);
-    std::cout << bursts << "\n";
-    return 0;
   }
-  if (argc == 2 && std::string(argv[1]) == "--fifo") {
-    fifoParity();
-    return 0;
-  }
-  if (argc != 1) return 2;
-  replayBursts({0,1,2,3,4,5,6,7});
+  require(std::cin.eof() && bursts);
+  if (!masks.empty()) replayBursts(masks);
+  std::cout << bursts << "\n";
+}
+
+void timeline() {
   // Hand timeline: 2 bytes at 3 ns/byte + 4 ns propagation arrive at 10.
   Channel single(1, 2, 5);
   single.profiles.upload({{3,4}});
@@ -146,13 +138,14 @@ int main(int argc, char** argv) {
   require(whole.results.read()[0].admission == Admission::ClockOverflow);
   require(whole.state.read()[0].now == at_limit[0].now);
 
-  fifoParity();
+}
+
+void accounting(unsigned links, unsigned ticks, unsigned cycles) {
   // Exercise bounded storage across repeated construction and saturated runs.
   // cudaMemGetInfo is diagnostic on a shared GPU; conservation is a hard gate.
   size_t free_before, free_after, total;
   checked(cudaMemGetInfo(&free_before, &total));
-  constexpr unsigned links = 8192, ticks = 1024;
-  for (unsigned cycle=0; cycle<8; ++cycle) {
+  for (unsigned cycle=0; cycle<cycles; ++cycle) {
     Channel loaded(links, 4, 10);
     loaded.profiles.upload(std::vector<Profile>(links, {6,0}));
     loaded.attempts.upload(std::vector<Attempt>(links, {1,1000,10}));
@@ -164,7 +157,20 @@ int main(int argc, char** argv) {
     }
   }
   checked(cudaMemGetInfo(&free_after, &total));
-  std::cout << "67108864 loaded link intervals; free device bytes before/after: "
+  std::cout << links*ticks*cycles << " loaded link intervals; free device bytes before/after: "
             << free_before << "/" << free_after << "\n";
-  std::cout << "41120 link intervals matched the CPU reference\n";
+
+}
+
+int main(int argc, char** argv) {
+  if (argc > 2) return 2;
+  std::string name = argc == 1 ? "" : argv[1];
+  if (name == "--replay") { replay(); return 0; }
+  if (name == "--soak") { accounting(8192,1024,8); return 0; }
+  if (name.empty() || name == "--fifo") fifoParity();
+  if (name.empty() || name == "--timeline") timeline();
+  if (name.empty() || name == "--accounting") accounting(4,24,1);
+  if (name.empty() || name == "--loss-masks") replayBursts({0,1,2,3,4,5,6,7});
+  return name.empty() || name == "--fifo" || name == "--timeline" ||
+         name == "--accounting" || name == "--loss-masks" ? 0 : 2;
 }
