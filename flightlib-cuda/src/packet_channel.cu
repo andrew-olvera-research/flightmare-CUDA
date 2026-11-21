@@ -32,8 +32,12 @@ static __global__ void advance(unsigned links, unsigned depth, unsigned dt_ns,
       if (arrival - link.now > attempt.ttl_ns) {
         result.admission = Admission::Deadline;
       } else {
-        pending[(Time(link.head) + link.size) % depth] = {attempt.id, arrival};
-        ++link.size;
+        if (attempt.drop_at_receiver) {
+          ++link.modeled_loss;
+        } else {
+          pending[(Time(link.head) + link.size) % depth] = {attempt.id, arrival};
+          ++link.size;
+        }
         ++link.accepted;
         link.tx_free = finish;
         result.admission = Admission::Accepted;

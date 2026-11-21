@@ -8,9 +8,9 @@
 namespace flightlib_cuda::packet {
 using Time = std::uint64_t;
 struct Profile { unsigned ns_per_byte, propagation_ns; };
-struct Attempt { Time id, ttl_ns; unsigned bytes; }; // zero bytes = idle
+struct Attempt { Time id, ttl_ns; unsigned bytes; unsigned drop_at_receiver = 0; }; // zero bytes = idle
 struct Event { Time id, arrival_ns; };
-struct Link { Time now, tx_free, accepted, delivered, rejected_full; unsigned head, size; };
+struct Link { Time now, tx_free, accepted, delivered, rejected_full, modeled_loss; unsigned head, size; };
 enum class Admission : unsigned { Idle, Accepted, Full, Deadline, ClockOverflow };
 struct Result { Admission admission; unsigned delivered; };
 

@@ -17,3 +17,5 @@ The driver steps the native environment for 10 ms of simulation time, then enque
 Each run includes 128 warmup steps and 128 individually timed steps. The sweep shuffles the plant-only and channel configurations across three rounds. CUDA event time spans the entire step, including any gaps in kernel submission. The host waits between samples. Packet totals include warmup, while the CUDA API counters cover the timed loop. To compute steady-state offered attempts/s for these fixtures, divide endpoint count by mean measured step time in seconds. Delivery throughput in overload requires subtracting warmup deliveries from the cumulative count.
 
 The producer and receiver buffers are preallocated. The time measurements exclude payload production, receiver fan-in, host export, and policy inference. This first stage exercises independent links. Shared sender airtime, broadcast and trace-calibrated impairments require separate qualification.
+
+For measured reception replay and profile qualification, see [Wi-SUN validation](wisun_validation.md).
