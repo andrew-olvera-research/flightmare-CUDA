@@ -11,12 +11,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("driver", help="built tools/profile/native profile_driver")
     parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--shared", action="store_true", help="compare shared unicast and broadcast with plant only")
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("rounds must be positive")
     workloads = ["environment"] + [
         "environment-packet-" + kind for kind in ("ideal", "rate", "overload")
     ]
+    if args.shared:
+        workloads = ["environment", "environment-shared-unicast", "environment-shared-broadcast"]
     cases = [(e, a, mode) for e, a in ((1, 1), (1, 100), (1, 1000), (100, 10))
              for mode in workloads]
     rng = random.Random(22)

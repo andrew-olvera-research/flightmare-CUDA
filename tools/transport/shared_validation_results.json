@@ -1,0 +1,66 @@
+{
+  "source": "https://pubs.cs.uct.ac.za/id/eprint/534/1/Final_Version.pdf",
+  "approximate_means": true,
+  "replicates": 32,
+  "simulated_seconds_per_replicate": 0.108,
+  "rows": [
+    {
+      "senders": 1,
+      "measured": 0.432,
+      "simulated": 0.4633487654320988,
+      "simulated_sd": 0.0028463049057052318,
+      "relative_error": 0.0725665866483769
+    },
+    {
+      "senders": 2,
+      "measured": 0.47,
+      "simulated": 0.48336762688614543,
+      "simulated_sd": 0.006983683763136048,
+      "relative_error": 0.02844175933222437
+    },
+    {
+      "senders": 3,
+      "measured": 0.462,
+      "simulated": 0.469221536351166,
+      "simulated_sd": 0.009983013762538542,
+      "relative_error": 0.015631031063129797
+    },
+    {
+      "senders": 4,
+      "measured": 0.444,
+      "simulated": 0.4526320301783265,
+      "simulated_sd": 0.010262128609903977,
+      "relative_error": 0.019441509410645264
+    },
+    {
+      "senders": 5,
+      "measured": 0.422,
+      "simulated": 0.42704046639231824,
+      "simulated_sd": 0.00996171014971008,
+      "relative_error": 0.011944233157152206
+    },
+    {
+      "senders": 6,
+      "measured": 0.4,
+      "simulated": 0.40089163237311387,
+      "simulated_sd": 0.009830218167219339,
+      "relative_error": 0.0022290809327845107
+    },
+    {
+      "senders": 7,
+      "measured": 0.384,
+      "simulated": 0.37907235939643347,
+      "simulated_sd": 0.01115284804906308,
+      "relative_error": -0.01283239740512121
+    },
+    {
+      "senders": 8,
+      "measured": 0.367,
+      "simulated": 0.3542952674897119,
+      "simulated_sd": 0.012611917385756717,
+      "relative_error": -0.03461779975555335
+    }
+  ],
+  "relative_error_limit": 0.1,
+  "passed": true
+}

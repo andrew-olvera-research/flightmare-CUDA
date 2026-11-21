@@ -1,7 +1,7 @@
 #include "flightlib_cuda/environment.hpp"
 #include <cuda_runtime.h>
 #include <cuda_profiler_api.h>
-#include "../../../flightlib-cuda/tests/packet_fixture.cuh"
+#include "../../../flightlib-cuda/tests/shared_fixture.cuh"
 #include <chrono>
 #include <algorithm>
 #include <iostream>
@@ -57,7 +57,8 @@ int main(int argc,char** argv){try{
  if(iterations<1||samples<1||warmup<0||percent<0||percent>100||reset_percent<0||reset_percent>100)throw std::invalid_argument("invalid measurement dimensions");
  const bool network = workload=="environment-packet-ideal" ||
                       workload=="environment-packet-rate" || workload=="environment-packet-overload";
- if(!network && workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random"&&workload!="environment-graph")throw std::invalid_argument("unknown workload");
+ const bool shared = workload=="environment-shared-unicast" || workload=="environment-shared-broadcast";
+ if(!shared && !network && workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random"&&workload!="environment-graph")throw std::invalid_argument("unknown workload");
  auto setup_begin=Clock::now();RuntimeConfig config;config.environments=E;config.slots=A;config.substeps=(workload=="dynamics"||environment)?prepareSchedule(control_dt).size():0;
  Simulation sim(config);Index N=sim.views().topology.batch.lanes;
  std::vector<Mask> active(N),selected(N,1);for(Index i=0;i<N;++i)active[i]=(i%100)<static_cast<Index>(percent);
@@ -93,6 +94,21 @@ int main(int argc,char** argv){try{
    channel->attempts.upload(std::vector<packet_fixture::Attempt>(N,{1,UINT64_MAX,1200}));
    check(cudaDeviceSynchronize());
  }
+ std::unique_ptr<packet_fixture::SharedChannel> medium;
+ if(shared) {
+   auto period = std::llround(double(control_dt)*1e9);
+   if(percent!=100 || reset_percent!=0 || period<1 || period>UINT32_MAX)
+     throw std::invalid_argument("shared benchmark requires active lanes and positive uint32 tick");
+   packet_fixture::SharedProfile profile{9000,16,148,32000,72000,22};
+   medium = std::make_unique<packet_fixture::SharedChannel>(E,A,period,profile);
+   std::vector<packet_fixture::Frame> frames(N);
+   for(Index lane=0;lane<N;++lane){
+     unsigned next=(lane%A+1)%A;
+     frames[lane]={lane,1,0,next,1000,workload=="environment-shared-broadcast"};
+   }
+   medium->offers.upload(frames);
+   check(cudaDeviceSynchronize());
+ }
  Graph graph;double capture_ms=0;
  if(workload=="environment-graph"){auto begin=Clock::now();graph=captureEnvironment(sim,task,source,execution);capture_ms=ms(begin,Clock::now());}
  cudaStream_t direct;check(cudaStreamCreateWithFlags(&direct,cudaStreamNonBlocking));
@@ -102,6 +118,9 @@ int main(int argc,char** argv){try{
    if(workload=="environment-graph")sim.replay(graph);
    else if(environment){
      stepEnvironment(sim,task,source,execution);
+     if(medium)sim.enqueue([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
+       static_cast<packet_fixture::SharedChannel*>(ctx)->run(stream);
+     },medium.get());
      if(channel)sim.enqueue([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
        static_cast<packet_fixture::Channel*>(ctx)->run(stream);
      },channel.get());
@@ -173,6 +192,21 @@ int main(int argc,char** argv){try{
    }
  }
  std::cout<<"]";
+ if(medium){
+   std::uint64_t tx=0, collisions=0, copies=0;
+   auto ticks=std::uint64_t(warmup)+std::uint64_t(iterations)*samples;
+   for(auto m:medium->media.read()){
+     if(m.now!=ticks*medium->tick)throw std::runtime_error("medium clock mismatch");
+     tx+=m.transmissions; collisions+=m.collisions;
+   }
+   for(auto s:medium->senders.read()){
+     if(s.completions+(s.phase!=packet_fixture::Phase::Empty)!=s.sequence)
+       throw std::runtime_error("shared sender accounting mismatch");
+     copies+=s.received_copies;
+   }
+   std::cout<<",\"shared_attempts_on_air\":"<<tx<<",\"collision_events\":"<<collisions
+            <<",\"receiver_copies\":"<<copies;
+ }
  if(channel)std::cout<<",\"packet_accepted\":"<<accepted<<",\"packet_delivered\":"<<delivered
    <<",\"packet_full\":"<<full<<",\"packet_bytes\":"<<std::uint64_t(N)*
    (sizeof(packet_fixture::Profile)+sizeof(packet_fixture::Attempt)+sizeof(packet_fixture::Link)+
