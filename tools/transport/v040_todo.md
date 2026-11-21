@@ -11,7 +11,25 @@
 3. [x] Finish #23 with two named acceptance scenarios. Under output and work pressure compare every observable event and cursor horizon to uninterrupted execution, including zero capacity, repeat-after-completion, and one plant step with multiple channel drains. Test handle accounting with one delivered broadcast receiver, one erased or reset receiver and a separate active environment; cover rejection, expiry, cancellation and safe reuse after the consumer's stream completes. Distinguish native cursor support from the public environment's fully reserved output path. Document the supported entry point, drain counts and ownership boundaries in a runnable consumer example.
 4. [x] Make parity, API contracts, health and performance independently selectable. Split large native mains into named cases using existing fixtures and binaries. Move the long lifecycle soak behind an explicit health selection; keep a small accounting check in ordinary CI. Preserve direct dataset replay commands. Register each case once per normal CI run. Keep leak/race instrumentation as a separate release check on a supported runner.
 5. [x] Add a separate fidelity entry point for the existing measured evaluations. Emit individual results for replay mismatch, source/measurement error and physical-profile qualification. Keep Bristol and Wi-SUN negative results reproducible. Ordinary verification needs no dataset download. Fidelity uses pinned inputs from a cache; release evidence records source digest, expected scope, observed metric, tolerance and verdict. Keep ns-3 and GPU timing runs as distinct reports.
-6. [ ] Verify routing and usefulness before merging. From clean and warm builds record test inventory, total time and slow cases per selection. Prove a broken arrival timestamp fails parity, a lost or prematurely recycled handle fails #23, and a changed physical-fit metric appears under fidelity. Missing data, empty selections or unsupported instrumentation must have explicit outcomes. Review redundant assertions by failure mode, retaining separate coverage when native and public entry points can break independently.
+6. [x] Verify routing and usefulness before merging. From clean and warm builds record test inventory, total time and slow cases per selection. Prove a broken arrival timestamp fails parity, a lost or prematurely recycled handle fails #23, and a changed physical-fit metric appears under fidelity. Missing data, empty selections or unsupported instrumentation must have explicit outcomes. Review redundant assertions by failure mode, retaining separate coverage when native and public entry points can break independently.
+
+### Test-layer acceptance on the RTX 5070 Ti
+
+The three network targets took 17.63 s to configure and compile in a fresh build directory. The table gives elapsed seconds for the selections after that build and on immediate reuse. Times include test process startup and exclude the CI harness's source fingerprint and toolchain inventory.
+
+| Selection | Inventory | Fresh | Warm |
+| --- | --- | ---: | ---: |
+| Parity | Native FIFO and public slot oracle | 1.49 | 1.59 |
+| API | Seven native and eight public cases | 2.39 | 2.39 |
+| Health | 67,108,864 directed link intervals and 24 public graph lifecycles | 1.64 | 1.69 |
+| Performance | Four batch shapes, three configurations, three rounds | 1.37 | 1.37 |
+| Fidelity | Bristol, Wi-SUN and saturation | 19.56 | 18.51 |
+
+The longest individual fresh parity and API cases were the slot oracle (0.19 s) and ordinary public step (0.14 s). The graph lifecycle took 1.42 s. Bristol input processing and replay took 17.66 s. At one environment of 1,000 agents, warm median plant/shared/sampled step times were 16.42/34.82/36.86 microseconds. At 100 environments of ten agents they were 16.59/24.58/24.58 microseconds. Each medium had one sender and zero sampled loss.
+
+In an isolated build, adding 1 ns to delivered arrivals failed FIFO parity at seed 22, tick 0, link 3 (6 ns expected, 7 ns observed). Clearing the public inbox handle made the cross-stream consumer read 0 instead of payload 202. Doubling the saturation measurement's simulated throughput failed the physical-fit gate. The timing mutation also failed Wi-SUN engine replay. Missing cache files produced measurement errors for both datasets and an empty native selection exited nonzero. The frozen plant manifest passed. Ordinary and host-UBSan native suites each passed 11 cases. The public suite passed 82 with one skip.
+
+The hardware runs matched all 138,426 Bristol masks and 37,740 Wi-SUN triplets. Eight of twelve Bristol bands qualified. Wi-SUN met the September limits and failed the October confirmation. The 1–8 sender saturation results met their 10% tolerance. Live Torch allocations returned to zero in every graph cycle. The dedicated network sanitizer profile exited nonzero with status `unsupported` because Compute Sanitizer could not initialize the WDDM debugger. Device-instrumented leak and race evidence remains outstanding.
 
 ## Earlier implementation and qualification evidence
 

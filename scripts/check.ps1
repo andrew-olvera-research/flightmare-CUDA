@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan', 'network-parity', 'network-api', 'network-health', 'network-performance', 'network-fidelity')]
+    [ValidateSet('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan', 'network-parity', 'network-api', 'network-health', 'network-performance', 'network-fidelity', 'network-sanitize')]
     [string]$Profile = 'fast'
 )
 $ErrorActionPreference = 'Stop'

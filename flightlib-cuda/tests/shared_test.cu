@@ -7,7 +7,7 @@ using namespace packet_fixture;
 
 #define require(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
 
-// A consumer with three immutable offer rows and a reusable output slab.
+// A consumer with four immutable offer rows and a reusable output slab.
 void continuation() {
   namespace plant = flightlib_cuda::v1;
   constexpr float dt = .001f;
@@ -29,38 +29,47 @@ void continuation() {
 
   SharedProfile profile{1,1,2,0,0,22};
   SharedChannel single(1,1,tick_ns,profile), resumed(1,1,tick_ns,profile);
-  Buffer<unsigned> offsets(3);
-  offsets.upload({0,20,50});
-  Buffer<Frame> offers(3);
+  Buffer<unsigned> offsets(4);
+  offsets.upload({0,20,50,65});
+  Buffer<Frame> offers(4);
   offers.upload({{4,1,0,0,5,0,7,10,44,0}, {5,1,0,0,10,0,8,11,45,30},
-                 {6,0,1,0,20,1,9,12,46,0}});
-  Buffer<Reception> complete(3), slab(2);
+                 {6,0,1,0,20,1,9,12,46,0}, {7,1,0,0,5,0,10,13,47,0}});
+  Buffer<Reception> complete(4), slab(2);
   Buffer<TimelineCursor> cursor(1);
   advanceSharedSchedule(1,1,tick_ns,profile,single.media.data,offers.data,single.senders.data,
-                        complete.data,nullptr,nullptr,3,offsets.data);
+                        complete.data,nullptr,nullptr,4,offsets.data);
   auto expected = complete.read();
   auto drain = [&](unsigned budget, unsigned rows, unsigned next, unsigned written, Time horizon) {
     continueSharedSchedule(1,1,tick_ns,profile,resumed.media.data,offers.data,resumed.senders.data,
-                           slab.data,nullptr,nullptr,3,offsets.data,cursor.data,budget,rows);
+                           slab.data,nullptr,nullptr,4,offsets.data,cursor.data,budget,rows);
     auto c = cursor.read()[0];
-    require(c.next == next && c.written == written && c.through_ns == horizon);
+    if (c.next != next || c.written != written || c.through_ns != horizon) {
+      std::cerr << "drain budget=" << budget << " rows=" << rows
+                << " expected next/written/horizon=" << next << "/" << written << "/" << horizon
+                << " actual=" << c.next << "/" << c.written << "/" << c.through_ns << '\n';
+      throw std::runtime_error("continuation cursor mismatch");
+    }
     require(resumed.media.read()[0].now == horizon && plantTime() == dt);
+    auto packed = slab.read();
+    for (unsigned i=0; i<written; ++i) {
+      const auto& row = packed[i];
+      const auto& ref = expected[next-written+i];
+      auto fields = [](const Reception& r) {
+        return std::make_tuple(r.id,r.arrival,r.receivers,r.receiver_base,r.completed,r.collided,
+                               r.all_peers,r.admission,r.submitted,r.attempt_id,r.handle,r.expired,
+                               r.fixture_label,r.air_start,r.air_end);
+      };
+      require(fields(row) == fields(ref));
+    }
   };
   drain(3,0,0,0,0);
   drain(0,1,0,0,0);
-  const Time horizons[]{20,50,tick_ns};
-  for (unsigned i=0; i<3; ++i) {
-    drain(i == 1 ? 1 : 3, i == 1 ? 2 : 1, i+1, 1, horizons[i]);
-    auto row = slab.read()[0];
-    auto ref = expected[i];
-    auto fields = [](const Reception& r) {
-      return std::make_tuple(r.id,r.arrival,r.receivers,r.receiver_base,r.completed,r.collided,
-                             r.all_peers,r.admission,r.submitted,r.attempt_id,r.handle,r.expired,
-                             r.fixture_label,r.air_start,r.air_end);
-    };
-    require(fields(row) == fields(ref));
-  }
-  drain(3,1,3,0,tick_ns);
+  drain(3,1,1,1,20);
+  drain(1,2,2,1,50);
+  drain(3,2,4,2,tick_ns);
+  require(!expected[2].completed && expected[3].completed &&
+          expected[3].handle == 46 && expected[3].admission == Admission::Full);
+  drain(3,1,4,0,tick_ns);
 }
 
 int measurement(int argc, char** argv) {

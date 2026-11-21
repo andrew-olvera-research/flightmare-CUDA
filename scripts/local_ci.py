@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 GIT = ['git', '-c', 'core.filemode=false', '-c', 'core.autocrlf=true']
 PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan',
-            'network-parity', 'network-api', 'network-health', 'network-performance', 'network-fidelity')
+            'network-parity', 'network-api', 'network-health', 'network-performance', 'network-fidelity', 'network-sanitize')
 
 
 def capture(args, root=ROOT):
@@ -64,6 +64,10 @@ def check_oracle(root=ROOT):
                            'scripts/oracle-baseline.json:\n' + '\n'.join(changed))
 
 
+class UnsupportedInstrumentation(RuntimeError):
+    pass
+
+
 class Runner:
     def __init__(self, directory, root=ROOT):
         self.directory = directory
@@ -91,6 +95,12 @@ class Runner:
                     raise
             step['returncode'] = returncode
             if returncode:
+                if args[0] == 'compute-sanitizer':
+                    diagnostic = log.read_text(errors='replace')
+                    unsupported = ('Failed to initialize WDDM debugger interface', 'Device not supported')
+                    for reason in unsupported:
+                        if reason in diagnostic:
+                            raise UnsupportedInstrumentation(reason)
                 raise RuntimeError(f'{name} failed (exit {returncode})')
         except (OSError, subprocess.TimeoutExpired, RuntimeError, KeyboardInterrupt):
             step['status'] = 'failed'
@@ -138,14 +148,23 @@ def network_check(lane, runner, cuda_options):
     build = '/build/network-ci'
     targets = {'network-parity': ['packet_test', '_native'],
                'network-api': ['packet_test', 'shared_test', '_native'],
-               'network-health': ['packet_test'], 'network-performance': ['_native'],
-               'network-fidelity': ['packet_test', 'shared_test']}
+               'network-health': ['packet_test', '_native'], 'network-performance': ['_native'],
+               'network-fidelity': ['packet_test', 'shared_test'],
+               'network-sanitize': ['packet_test', 'shared_test']}
     runner.cmake('network', 'flightlib-cuda', build,
                  ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
                   '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
                   f'-DPython_EXECUTABLE={CUDA_PYTHON}', *cuda_options], targets=targets[lane])
     if lane == 'network-health':
         runner.run('packet-lifecycle-soak', [f'{build}/packet_test', '--soak'])
+        runner.run('public-network-lifecycle', [CUDA_PYTHON, 'tools/transport/check_lifecycle.py'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+    elif lane == 'network-sanitize':
+        for tool in ('memcheck', 'racecheck', 'initcheck', 'synccheck'):
+            flags = ['--leak-check', 'full'] if tool == 'memcheck' else []
+            for target in ('packet_test', 'shared_test'):
+                runner.run(f'{tool}-{target}', ['compute-sanitizer', '--tool', tool,
+                           '--error-exitcode', '1', *flags, f'{build}/{target}'])
     elif lane == 'network-fidelity':
         cache = os.environ.get('FLIGHTMARE_MEASUREMENT_CACHE', '/build/network-measurements')
         runner.run('measured-network', [sys.executable, 'tools/transport/check_fidelity.py',
@@ -343,6 +362,8 @@ def main():
                 capture(GIT + ['status', '--short'])):
             raise RuntimeError('Release commit/worktree changed during validation')
         report['status'] = 'passed'
+    except UnsupportedInstrumentation as error:
+        report.update(status='unsupported', error=str(error))
     except (Exception, KeyboardInterrupt) as error:
         report['error'] = str(error)
         print(f'FAILED: {error}', file=sys.stderr)

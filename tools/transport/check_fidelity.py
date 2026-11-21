@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 HERE = Path(__file__).resolve().parent
 
@@ -49,6 +50,8 @@ def measure(name, cache, build, output):
             stage = "measurement"
             baseline = read_json(HERE / "shared_validation_results.json")
             refs = [r["measured"] for r in report["rows"]]
+            if report["relative_error_limit"] != baseline["relative_error_limit"]:
+                raise ValueError("Figure 5 acceptance tolerance changed")
             if refs != [r["measured"] for r in baseline["rows"]]:
                 raise ValueError("Figure 5 reference means changed")
             results.append(dict(stage=stage, status="verified", source=report["source"],
@@ -64,7 +67,10 @@ def measure(name, cache, build, output):
             baseline = read_json(HERE / "bristol_holdout.json")
             if report["replay_sha256"] != baseline["replay_sha256"]:
                 raise ValueError("extracted broadcast masks changed on pinned inputs")
-            results.append(dict(stage=stage, status="verified", sources=report["sources"]))
+            if report["distance_edges_m"] != baseline["distance_edges_m"]:
+                raise ValueError("Bristol distance band boundaries changed")
+            results.append(dict(stage=stage, status="verified", sources=report["sources"],
+                                distance_edges_m=report["distance_edges_m"]))
             expected = {(r["direction"], r["band"]): r["passed"] for r in baseline["scores"]}
             observed = {(r["direction"], r["band"]): r for r in report["scores"]}
             if expected.keys() != observed.keys():
@@ -78,6 +84,12 @@ def measure(name, cache, build, output):
         else:
             report = evaluate("validate_wisun.py", [cache / "data_5563.csv", "--replay-output", trace],
                               output / "wisun.json")
+            baseline = read_json(HERE / "wisun_5563_results.json")
+            for key in ("sha256", "limits", "october_limits"):
+                if report[key] != baseline[key]:
+                    raise ValueError(f"Wi-SUN reference {key} changed")
+            if hashlib.sha256(trace.read_bytes()).hexdigest() != baseline["replay_sha256"]:
+                raise ValueError("extracted Wi-SUN triplets changed on pinned input")
             results.append(dict(stage=stage, status="verified", source=report["source"],
                                 sha256=report["sha256"]))
             for month, models, limits, passed, required in (
@@ -88,7 +100,6 @@ def measure(name, cache, build, output):
                 model = report[models]["empirical_triplet"]
                 results.append(physical(f"{month} stationary FSK triplets", model[passed],
                                         required, model, limits))
-            baseline = read_json(HERE / "wisun_5563_results.json")
             count = (baseline["cuda_replayed_attempts"] + baseline["october_cuda_replayed_attempts"]) // 3
             binary, flag = build / "packet_test", "--replay"
         stage = "engine_replay"
@@ -105,12 +116,16 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    datasets = {name: measure(name, args.cache, args.build, args.output)
-                for name in ("bristol", "wisun", "saturation")}
+    datasets = {}
+    seconds = {}
+    for name in ("bristol", "wisun", "saturation"):
+        start = time.monotonic()
+        datasets[name] = measure(name, args.cache, args.build, args.output)
+        seconds[name] = round(time.monotonic() - start, 3)
     failures = [r for rows in datasets.values() for r in rows
                 if r["status"] == "error" or (r.get("required") and r["status"] == "rejected")]
     (args.output / "fidelity.json").write_text(json.dumps(
-        dict(schema=1, evidence_gate_passed=not failures, datasets=datasets), indent=2) + "\n")
+        dict(schema=1, evidence_gate_passed=not failures, seconds_by_source=seconds, datasets=datasets), indent=2) + "\n")
     for name, rows in datasets.items():
         print(name, ", ".join(r.get("scope", r["stage"]) + "=" + r["status"] for r in rows))
     for failure in failures:

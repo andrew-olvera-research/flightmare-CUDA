@@ -2,6 +2,7 @@
   "schema": 1,
   "source": "https://raw.githubusercontent.com/wine-uoc/wisun_traces/66c350d88d28fa39516fbc90722bdd3d9930d991/data_5563.csv",
   "sha256": "35e5ecc65477a8b6e3f579ec537392b1d4a61f62886ded4c1973c406b8904f76",
+  "replay_sha256": "1a4e6cbe075e6717c3a3f636152c7857f4b5cd5a8262a9887fe00c9846a9c870",
   "node": "5563",
   "mode": "FSK",
   "psdu_bytes": 32,
