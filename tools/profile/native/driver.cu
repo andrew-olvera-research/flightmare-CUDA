@@ -1,6 +1,7 @@
 #include "flightlib_cuda/environment.hpp"
 #include <cuda_runtime.h>
 #include <cuda_profiler_api.h>
+#include "../../../flightlib-cuda/tests/packet_fixture.cuh"
 #include <chrono>
 #include <algorithm>
 #include <iostream>
@@ -54,7 +55,9 @@ int main(int argc,char** argv){try{
  Index E=std::stoul(argv[1]),A=std::stoul(argv[2]);int iterations=std::stoi(argv[3]),samples=std::stoi(argv[4]),warmup=std::stoi(argv[5]);
  std::string workload=argv[6];int percent=std::stoi(argv[7]);bool trace=std::stoi(argv[8]);float control_dt=std::stof(argv[9]);int reset_percent=std::stoi(argv[10]);bool environment=workload.rfind("environment",0)==0;
  if(iterations<1||samples<1||warmup<0||percent<0||percent>100||reset_percent<0||reset_percent>100)throw std::invalid_argument("invalid measurement dimensions");
- if(workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random"&&workload!="environment-graph")throw std::invalid_argument("unknown workload");
+ const bool network = workload=="environment-packet-ideal" ||
+                      workload=="environment-packet-rate" || workload=="environment-packet-overload";
+ if(!network && workload!="direct"&&workload!="runtime"&&workload!="dispatch"&&workload!="state"&&workload!="command"&&workload!="mixed"&&workload!="dynamics"&&workload!="environment"&&workload!="environment-split"&&workload!="environment-random"&&workload!="environment-graph")throw std::invalid_argument("unknown workload");
  auto setup_begin=Clock::now();RuntimeConfig config;config.environments=E;config.slots=A;config.substeps=(workload=="dynamics"||environment)?prepareSchedule(control_dt).size():0;
  Simulation sim(config);Index N=sim.views().topology.batch.lanes;
  std::vector<Mask> active(N),selected(N,1);for(Index i=0;i<N;++i)active[i]=(i%100)<static_cast<Index>(percent);
@@ -76,6 +79,20 @@ int main(int argc,char** argv){try{
    task=bindTaskInputs(sim,input(actions,DType::Float32,{E,A,4}),selection,states.inputs()[1],states.inputs()[2]);
    resetEnvironment(sim,task);
  }
+ // Fixed synthetic directed ring, one outgoing link per endpoint, including
+ // loopback for singleton groups. Link row determines source and receiver.
+ std::unique_ptr<packet_fixture::Channel> channel;
+ if(network) {
+   if(percent!=100 || reset_percent!=0) throw std::invalid_argument("packet benchmark requires all lanes active and reset_percent=0");
+   const auto period = std::llround(double(control_dt)*1e9);
+   if(period<1 || period>UINT32_MAX) throw std::invalid_argument("packet tick outside uint32");
+   channel = std::make_unique<packet_fixture::Channel>(N,4,period);
+   unsigned ns_per_byte = workload=="environment-packet-ideal" ? 0 :
+                          (workload=="environment-packet-rate" ? 500 : 50000);
+   channel->profiles.upload(std::vector<packet_fixture::Profile>(N,{ns_per_byte,0}));
+   channel->attempts.upload(std::vector<packet_fixture::Attempt>(N,{1,UINT64_MAX,1200}));
+   check(cudaDeviceSynchronize());
+ }
  Graph graph;double capture_ms=0;
  if(workload=="environment-graph"){auto begin=Clock::now();graph=captureEnvironment(sim,task,source,execution);capture_ms=ms(begin,Clock::now());}
  cudaStream_t direct;check(cudaStreamCreateWithFlags(&direct,cudaStreamNonBlocking));
@@ -83,7 +100,12 @@ int main(int argc,char** argv){try{
  const double setup_ms=ms(setup_begin,Clock::now());
  auto step=[&]{
    if(workload=="environment-graph")sim.replay(graph);
-   else if(environment)stepEnvironment(sim,task,source,execution);
+   else if(environment){
+     stepEnvironment(sim,task,source,execution);
+     if(channel)sim.enqueue([](const RuntimeViews&,cudaStream_t stream,const std::vector<BindingRequest>&,void* ctx){
+       static_cast<packet_fixture::Channel*>(ctx)->run(stream);
+     },channel.get());
+   }
    else if(workload=="dynamics")stepDynamics(sim);
    else if(workload=="direct")touch<<<(N+127)/128,128,0,direct>>>(sim.views().state.x.data,N);
    else if(workload=="runtime")sim.enqueue(touchLaunch);
@@ -124,6 +146,15 @@ int main(int argc,char** argv){try{
    float expected=2;for(int i=0;i<warmup+iterations*samples;++i)expected+=control_dt;
    for(Index i=0;i<N;++i)if(statuses[i]!=(active[i]?LaneStatus::Ok:LaneStatus::Inactive)||actual[i]!=(active[i]?expected:0))throw std::runtime_error("dynamics completion mismatch");
  }
+ std::uint64_t accepted=0, delivered=0, full=0;
+ if(channel){
+   const auto ticks = std::uint64_t(warmup) + std::uint64_t(iterations)*samples;
+   for(auto link:channel->state.read()){
+     if(link.now!=ticks*channel->tick || link.size>channel->depth || link.accepted+link.rejected_full!=ticks || link.accepted-link.delivered!=link.size)
+       throw std::runtime_error("packet stage completion mismatch");
+     accepted+=link.accepted; delivered+=link.delivered; full+=link.rejected_full;
+   }
+ }
  std::uint64_t resets=0,draws=0;unsigned final_done=0;
  if(environment){
    std::vector<Mask> valid(N),done(N);std::vector<LaneStatus> status(N);std::vector<std::uint64_t> episodes(N),rng(N);
@@ -141,7 +172,12 @@ int main(int argc,char** argv){try{
      resets+=episodes[n]-active[n];draws+=rng[n];final_done+=done[n];
    }
  }
- std::cout<<"],\"auto_resets_including_warmup\":"<<resets<<",\"random_draws\":"<<draws<<",\"final_done_lanes\":"<<final_done<<",\"calls\":{";for(int i=0;i<Count;++i){if(i)std::cout<<',';std::cout<<'"'<<names[i]<<"\":"<<calls[i];}
+ std::cout<<"]";
+ if(channel)std::cout<<",\"packet_accepted\":"<<accepted<<",\"packet_delivered\":"<<delivered
+   <<",\"packet_full\":"<<full<<",\"packet_bytes\":"<<std::uint64_t(N)*
+   (sizeof(packet_fixture::Profile)+sizeof(packet_fixture::Attempt)+sizeof(packet_fixture::Link)+
+    sizeof(packet_fixture::Result)+2*channel->depth*sizeof(packet_fixture::Event));
+ std::cout<<",\"auto_resets_including_warmup\":"<<resets<<",\"random_draws\":"<<draws<<",\"final_done_lanes\":"<<final_done<<",\"calls\":{";for(int i=0;i<Count;++i){if(i)std::cout<<',';std::cout<<'"'<<names[i]<<"\":"<<calls[i];}
  std::cout<<"},\"arena_categories\":{";std::map<std::string,Offset> cats;for(auto& b:sim.allocationPlan().buffers)cats[b.category]+=b.bytes;
  bool first=true;for(auto& c:cats){if(!first)std::cout<<',';first=false;std::cout<<'"'<<c.first<<"\":"<<c.second;}
  std::cout<<"},\"validated\":true}\n";

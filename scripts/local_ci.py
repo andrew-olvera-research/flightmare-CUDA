@@ -219,14 +219,15 @@ def execute(profile, runner):
                                '--error-exitcode', '1',
                                '/build/flightlib-cuda-contracts/runtime_test'])
         execute('verify', runner)
-        targets = ('runtime_test', 'guarded_test', 'lifecycle_test', 'dynamics_test', 'environment_test')
+        targets = ('packet_test', 'runtime_test', 'guarded_test', 'lifecycle_test', 'dynamics_test', 'environment_test')
         env = dict(os.environ, FLIGHTMARE_PATH=str(ROOT),
                    PYTHONPATH='/workspace/flightrl-cuda:/workspace/tools/profile:/build/flightlib-cuda-python-native/python')
         for tool in ('memcheck', 'racecheck', 'initcheck', 'synccheck'):
             prefix = ['compute-sanitizer', '--tool', tool, '--error-exitcode', '1']
             for target in targets:
                 if tool == 'memcheck' and target == 'runtime_test': continue
-                runner.run(f'{tool}-{target}', prefix + [f'/build/flightlib-cuda-contracts/{target}'],
+                options = ['--leak-check', 'full'] if (tool, target) == ('memcheck', 'packet_test') else []
+                runner.run(f'{tool}-{target}', prefix + options + [f'/build/flightlib-cuda-contracts/{target}'],
                            env=env, timeout=900)
             runner.run(f'{tool}-rl', prefix + ['/build/flightlib-cuda-python/bin/python', '-m', 'pytest', '-q',
                        'flightrl-cuda/tests/test_rl.py', '-k',
