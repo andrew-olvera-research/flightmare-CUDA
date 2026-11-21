@@ -1,9 +1,67 @@
 #include "shared_fixture.cuh"
+#include "flightlib_cuda/dynamics.hpp"
 #include <iostream>
 #include <string>
+#include <tuple>
 using namespace packet_fixture;
 
-void require(bool ok) { if (!ok) throw std::runtime_error("shared channel mismatch"); }
+#define require(condition) do { if (!(condition)) throw std::runtime_error(#condition); } while (false)
+
+// A consumer with three immutable offer rows and a reusable output slab.
+void continuation() {
+  namespace plant = flightlib_cuda::v1;
+  constexpr float dt = .001f;
+  constexpr unsigned tick_ns = 1000000;
+  plant::RuntimeConfig config;
+  config.environments = config.slots = config.substeps = 1;
+  plant::Simulation sim(config);
+  plant::configure(sim, {plant::ModelConfig{}}, {0}, {1}, {-10,10,-10,10,-10,10}, dt);
+  auto mode = plant::CommandMode::RotorThrust;
+  checked(cudaMemcpy(sim.buffer("commands.mode"), &mode, sizeof(mode), cudaMemcpyHostToDevice));
+  plant::stepDynamics(sim);
+  sim.synchronize();
+  auto plantTime = [&] {
+    float t;
+    checked(cudaMemcpy(&t, sim.views().state.time.data, sizeof(t), cudaMemcpyDeviceToHost));
+    return t;
+  };
+  require(plantTime() == dt);
+
+  SharedProfile profile{1,1,2,0,0,22};
+  SharedChannel single(1,1,tick_ns,profile), resumed(1,1,tick_ns,profile);
+  Buffer<unsigned> offsets(3);
+  offsets.upload({0,20,50});
+  Buffer<Frame> offers(3);
+  offers.upload({{4,1,0,0,5,0,7,10,44,0}, {5,1,0,0,10,0,8,11,45,30},
+                 {6,0,1,0,20,1,9,12,46,0}});
+  Buffer<Reception> complete(3), slab(2);
+  Buffer<TimelineCursor> cursor(1);
+  advanceSharedSchedule(1,1,tick_ns,profile,single.media.data,offers.data,single.senders.data,
+                        complete.data,nullptr,nullptr,3,offsets.data);
+  auto expected = complete.read();
+  auto drain = [&](unsigned budget, unsigned rows, unsigned next, unsigned written, Time horizon) {
+    continueSharedSchedule(1,1,tick_ns,profile,resumed.media.data,offers.data,resumed.senders.data,
+                           slab.data,nullptr,nullptr,3,offsets.data,cursor.data,budget,rows);
+    auto c = cursor.read()[0];
+    require(c.next == next && c.written == written && c.through_ns == horizon);
+    require(resumed.media.read()[0].now == horizon && plantTime() == dt);
+  };
+  drain(3,0,0,0,0);
+  drain(0,1,0,0,0);
+  const Time horizons[]{20,50,tick_ns};
+  for (unsigned i=0; i<3; ++i) {
+    drain(i == 1 ? 1 : 3, i == 1 ? 2 : 1, i+1, 1, horizons[i]);
+    auto row = slab.read()[0];
+    auto ref = expected[i];
+    auto fields = [](const Reception& r) {
+      return std::make_tuple(r.id,r.arrival,r.receivers,r.receiver_base,r.completed,r.collided,
+                             r.all_peers,r.admission,r.submitted,r.attempt_id,r.handle,r.expired,
+                             r.fixture_label,r.air_start,r.air_end);
+    };
+    require(fields(row) == fields(ref));
+  }
+  drain(3,1,3,0,tick_ns);
+}
 
 int main(int argc, char** argv) {
   if (argc == 2 && std::string(argv[1]) == "--saturation") {
@@ -49,31 +107,12 @@ int main(int argc, char** argv) {
     require(std::cin.eof());if(!masks.empty())replay();
     require(total>0);std::cout<<total<<"\n";return 0;
   }
-  require(argc == 1);
-  {
-    SharedProfile p{1,1,2,0,0,22};
-    SharedChannel single(1,1,100,p), resumed(1,1,100,p);
-    Buffer<unsigned> offsets(3); offsets.upload({0,20,50});
-    Buffer<Frame> offers(3); offers.upload({{4,1,0,0,5},{5,1,0,0,10},{6,1,0,0,20}});
-    Buffer<Reception> complete(3);
-    Buffer<TimelineCursor> cursor(1);
-    advanceSharedSchedule(1,1,100,p,single.media.data,offers.data,single.senders.data,
-                          complete.data,nullptr,nullptr,3,offsets.data);
-    auto expected=complete.read();
-    auto resume=[&](unsigned budget,unsigned rows){
-      continueSharedSchedule(1,1,100,p,resumed.media.data,offers.data,resumed.senders.data,
-            resumed.results.data,nullptr,nullptr,3,offsets.data,cursor.data,budget,rows);
-      return cursor.read()[0];
-    };
-    require(resume(3,0).next==0 && resume(0,1).through_ns==0);
-    for(unsigned i=0;i<3;++i){
-      auto c=resume(3,1);
-      auto actual=resumed.results.read()[0];
-      require(c.next==i+1 && c.written==1 && actual.completed &&
-              actual.id==expected[i].id && actual.arrival==expected[i].arrival);
-    }
-    require(resume(1,1).written==0 && resumed.media.read()[0].now==100);
+  if (argc == 2 && std::string(argv[1]) == "--continuation") {
+    continuation();
+    return 0;
   }
+  require(argc == 1);
+  continuation();
   SharedChannel ch(2,2,5,{1,1,1,0,2,22});
   // Two simultaneous senders collide in medium 0. In medium 1 a broadcast
   // takes ten ns and delivers to two of three receivers.
