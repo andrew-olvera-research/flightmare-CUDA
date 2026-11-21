@@ -4,7 +4,7 @@
 namespace flightlib_cuda::packet {
 // A medium is a fully connected contention domain. One row per sender.
 // receivers and erased are masks relative to receiver_base within the medium.
-struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; bool all_peers = false; };
+struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; std::uint8_t all_peers = 0; };
 struct SharedProfile {
   unsigned slot_ns, window_slots, ns_per_byte, preamble_ns, recovery_ns, seed;
 };
@@ -12,7 +12,7 @@ struct Medium { Time now, next_slot, transmissions, collisions, busy_ns; };
 enum class Phase : unsigned { Empty, Waiting, OnAir };
 struct Sender {
   Frame frame;
-  Time finish, sequence, completions, received_copies;
+  Time submitted, finish, sequence, completions, received_copies;
   unsigned remaining;
   Phase phase;
   bool collided;
@@ -40,5 +40,5 @@ __host__ __device__ inline bool receivedBy(const Reception& r, unsigned sender,
 // is rejected independently of a previous frame completing this tick.
 // All arrays must be disjoint and retained on the stream's device until done.
 void advanceShared(unsigned domains, unsigned stations, unsigned dt_ns, SharedProfile,
-                   Medium*, const Frame*, Sender*, Reception*, cudaStream_t);
+                   Medium*, const Frame*, Sender*, Reception*, cudaStream_t, const std::uint8_t* active=nullptr);
 } // namespace flightlib_cuda::packet

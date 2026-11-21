@@ -127,11 +127,21 @@ struct NativeEnvironment {
   NativeEnvironment(Index E,Index A,float dt,int device,std::uint64_t seed,
                     const std::vector<ModelConfig>& models,const std::vector<Index>& ids,
                     const std::vector<Mask>& active,const std::vector<float>& bounds,Index capacity=0,float radius=0,bool terminate=false,
-                    py::dict imu={},py::dict odometry={},py::dict barometer={}):sim([&]{
+                    py::dict imu={},py::dict odometry={},py::dict barometer={},py::dict network={}):sim([&]{
     auto schedule=prepareSchedule(dt);
     RuntimeConfig c;c.environments=E;c.slots=A;c.models=models.size();c.substeps=schedule.size();c.device=device;c.seed=seed;
     c.imu=sensorSettings(imu);c.odometry=sensorSettings(odometry);
     c.barometer=sensorSettings(barometer);
+    if(!network.empty()){
+      auto period=std::llround(double(dt)*1e9);
+      if(period<1 || period>UINT32_MAX)throw std::invalid_argument("unsupported network tick");
+      c.network_tick_ns=period;
+      c.network_fanin=network["fanin"].cast<Index>();
+      if(!c.network_fanin)throw std::invalid_argument("network requires positive receiver fanin");
+      c.shared_profile={network["slot_ns"].cast<Index>(),network["window_slots"].cast<Index>(),
+        network["ns_per_byte"].cast<Index>(),network["preamble_ns"].cast<Index>(),
+        network["recovery_ns"].cast<Index>(),network["seed"].cast<Index>()};
+    }
     validateSensorPeriods(schedule,c.imu,c.odometry,c.barometer);
     if(c.imu.period_ns||c.odometry.period_ns||c.barometer.period_ns)c.sensor_step_ns=std::llround(double(dt)*1e9);
     c.candidates_per_environment=capacity;c.agent_collision_radius=radius;c.terminate_on_agent_collision=terminate;return c;}()){
@@ -216,6 +226,9 @@ struct NativeExport {
 };
 }
 PYBIND11_MODULE(_native,m){
+  using flightlib_cuda::packet::Frame;
+  m.attr("frame_offsets")=py::make_tuple(offsetof(Frame,id),offsetof(Frame,receivers),offsetof(Frame,erased),
+      offsetof(Frame,receiver_base),offsetof(Frame,bytes),offsetof(Frame,all_peers));
   m.def("profile_start",[]{if(cudaProfilerStart()!=cudaSuccess)throw std::runtime_error("profiler start failed");});
   m.def("profile_stop",[]{if(cudaProfilerStop()!=cudaSuccess)throw std::runtime_error("profiler stop failed");});
   py::class_<ModelConfig>(m,"ModelConfig").def(py::init<>())
@@ -254,6 +267,7 @@ PYBIND11_MODULE(_native,m){
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool>())
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict>())
     .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict,py::dict>())
+    .def(py::init<Index,Index,float,int,std::uint64_t,const std::vector<ModelConfig>&,const std::vector<Index>&,const std::vector<Mask>&,const std::vector<float>&,Index,float,bool,py::dict,py::dict,py::dict,py::dict>())
     .def_property_readonly("arena_bytes",[](NativeEnvironment& e){return e.sim.allocationPlan().arena_bytes;})
     .def("bind",&NativeEnvironment::bind,py::arg("action"),py::arg("selected"),py::arg("state"),py::arg("time"),py::arg("scene")=py::tuple()).def("reset",&NativeEnvironment::reset).def("auto_reset",&NativeEnvironment::autoReset)
     .def("test_step",&NativeEnvironment::testStep)

@@ -75,6 +75,16 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
   #pragma unroll
   for(int c=0;c<4;++c){v.state.motor_omega(c,n)=0;v.state.motor_thrust(c,n)=0;v.commands.payload(c,n)=0;}
   v.commands.mode(n)=CommandMode::RotorThrust;v.commands.time(n)=0;
+  if(v.network.offers.data){
+    const auto& net=v.network;
+    auto domain=n/v.topology.batch.slots_per_environment;
+    net.reset_ns(n)=reinterpret_cast<packet::Medium*>(net.media.data)[domain].now;
+    reinterpret_cast<packet::Frame*>(net.offers.data)[n]={};
+    reinterpret_cast<packet::Sender*>(net.senders.data)[n]={};
+    reinterpret_cast<packet::Reception*>(net.results.data)[n]={};
+    for(Offset k=0;k<net.sources.shape[1];++k)
+      for(unsigned f=0;f<4;++f)net.inbox(n,k,f)=0;
+  }
   v.episodes.command_time(n)=0;v.episodes.step(n)=0;++v.episodes.episode(n);
   if(source==ResetSource::Random)v.episodes.random_counter(n)+=10;
   #pragma unroll
@@ -262,6 +272,42 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
   if(scene.nodes || v.swarm.radius)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
   else taskKernel<InlineReset,TerminalReward,false><<<blocks,threads,0,stream>>>(v,in,source,scene);
 }
+__global__ void collectPackets(NetworkBuffers net, const Mask* active, Index slots){
+  Offset edge=Offset(blockIdx.x)*blockDim.x+threadIdx.x;
+  Offset fan=net.sources.shape[1], n=edge/fan, k=edge%fan;
+  if(n>=net.sources.shape[0])return;
+  Index source=net.sources(n,k), receiver=n%slots;
+  auto* fields=net.inbox.data+edge*4;
+  for(unsigned i=0;i<4;++i)fields[i]=0;
+  if(source>=slots || !active[n])return;
+  Offset lane=n-receiver+source;
+  auto r=reinterpret_cast<const packet::Reception*>(net.results.data)[lane];
+  auto submitted=reinterpret_cast<const packet::Sender*>(net.senders.data)[lane].submitted;
+  if(submitted>=net.reset_ns(n) && packet::receivedBy(r,source,receiver,slots)){
+    fields[0]=1;fields[1]=r.id;fields[2]=submitted;fields[3]=r.arrival;
+  }
+}
+__global__ void resetQuietMedium(RuntimeViews v){
+  auto domain=blockIdx.x, slots=v.topology.batch.slots_per_environment;
+  auto& medium=reinterpret_cast<packet::Medium*>(v.network.media.data)[domain];
+  for(Offset slot=threadIdx.x; ; slot+=blockDim.x){
+    bool pending=false;
+    if(slot<slots){
+      Offset n=Offset(domain)*slots+slot;
+      pending=v.topology.active(n) && v.network.reset_ns(n)!=medium.now;
+    }
+    if(__syncthreads_or(pending))return;
+    if((slot/blockDim.x+1)*blockDim.x>=slots)break;
+  }
+  if(!threadIdx.x){
+    // Keep the absolute clock monotonic across episode changes.
+    auto now=medium.now;medium={};medium.now=now;medium.next_slot=now;
+  }
+}
+void finishNetworkReset(const RuntimeViews& v,cudaStream_t stream){
+  if(v.network.media.data)
+    resetQuietMedium<<<v.topology.batch.environments,128,0,stream>>>(v);
+}
 void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ptr){
   auto ctx=*static_cast<EnvironmentContext*>(ptr);auto in=pointers(b);unsigned blocks=(Offset{v.topology.batch.lanes}+127)/128;
   bool first=ctx.execution==TaskExecution::FirstLaneReset;
@@ -280,6 +326,16 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
   }else if(scene.nodes)detail::launchSceneDynamics(v,stream,v.task_output.valid.data,scene,first);
   else if(first)detail::launchDynamicsFirst(v,stream,v.task_output.valid.data);
   else detail::launchDynamics(v,stream,v.task_output.valid.data);
+  if(v.network.offers.data){
+    auto& net=v.network;
+    auto batch=v.topology.batch;
+    packet::advanceShared(batch.environments,batch.slots_per_environment,net.tick_ns,net.profile,
+        reinterpret_cast<packet::Medium*>(net.media.data),reinterpret_cast<packet::Frame*>(net.offers.data),
+        reinterpret_cast<packet::Sender*>(net.senders.data),reinterpret_cast<packet::Reception*>(net.results.data),
+        stream,v.topology.active.data);
+    Offset edges=net.sources.shape[0]*net.sources.shape[1];
+    collectPackets<<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,batch.slots_per_environment);
+  }
   if(v.sensor_truth.samples.data)detail::launchSensors(v,stream,first);
   if(first||ctx.execution==TaskExecution::FusedReset)
     launchTask<true,true>(v,in,ctx.source,scene,blocks,threads,stream);
@@ -290,9 +346,12 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
     if(ctx.execution==TaskExecution::SeparateReset)
       resetKernel<<<blocks,threads,0,stream>>>(v,in,ctx.source,true);
   }
+  if(first || ctx.execution==TaskExecution::FusedReset || ctx.execution==TaskExecution::SeparateReset)
+    finishNetworkReset(v,stream);
 }
 void resetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& b,void* ctx){
   resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(b),*static_cast<ResetSource*>(ctx),false,b.size()==6 || v.swarm.radius);
+  finishNetworkReset(v,stream);
 }
 void validateExecution(const Simulation& s,TaskExecution execution){
   if(s.views().swarm.radius && execution==TaskExecution::FirstLaneReset)
@@ -301,6 +360,7 @@ void validateExecution(const Simulation& s,TaskExecution execution){
 }
 static void finishResetLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vector<BindingRequest>& inputs,void* ctx){
   resetKernel<<<(Offset{v.topology.batch.lanes}+127)/128,128,0,stream>>>(v,pointers(inputs),*static_cast<ResetSource*>(ctx),true);
+  finishNetworkReset(v,stream);
 }
 void recordEnvironmentFinish(Simulation& s,const Bindings& b,cudaStream_t stream,ResetSource source){
   validate(s,b);validateSource(source);s.recordInto(stream,finishResetLaunch,&source,&b);

@@ -2,6 +2,7 @@
 
 #include "flightlib_cuda/contracts.hpp"
 #include "flightlib_cuda/sensors.hpp"
+#include "flightlib_cuda/shared_channel.hpp"
 #include <cuda_runtime_api.h>
 #include <array>
 #include <memory>
@@ -58,6 +59,8 @@ struct RuntimeConfig {
   bool terminate_on_agent_collision{false};
   std::uint64_t sensor_step_ns{};
   SensorSettings imu{}, odometry{}, barometer{};
+  packet::SharedProfile shared_profile{};
+  Index network_tick_ns{}, network_fanin{};
 };
 
 struct SwarmCollision {
@@ -68,7 +71,17 @@ struct SwarmCollision {
   bool terminate{};
 };
 
+struct NetworkBuffers {
+  Matrix<Mask> media, offers, senders, results;
+  Matrix<Index> sources;
+  TensorView<std::uint64_t,3> inbox;
+  Vector<std::uint64_t> reset_ns;
+  packet::SharedProfile profile{};
+  Index tick_ns{};
+};
+
 struct RuntimeViews {
+  NetworkBuffers network;
   QuadState state;
   CommandStorage commands;
   QuadModelView models;

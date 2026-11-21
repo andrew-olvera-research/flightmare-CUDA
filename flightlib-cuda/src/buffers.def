@@ -86,3 +86,11 @@ FLC_SENSOR(barometer,1,baroPackets,baroQueue)
 FLC_SENSOR(odometry,10,odomPackets,odomQueue)
 FLC_BUFFER(imu.drift,Scalar,"sensors",6,imuPackets ? N : 0)
 #undef FLC_SENSOR
+
+FLC_BUFFER(network.media, Mask, "network", B ? E : 0, sizeof(packet::Medium))
+FLC_BUFFER(network.offers, Mask, "network", B, sizeof(packet::Frame))
+FLC_BUFFER(network.senders, Mask, "network", B, sizeof(packet::Sender))
+FLC_BUFFER(network.results, Mask, "network", B, sizeof(packet::Reception))
+FLC_BUFFER(network.sources, Index, "network", B, F)
+FLC_BUFFER(network.inbox, std::uint64_t, "network", B, F, 4)
+FLC_BUFFER(network.reset_ns, std::uint64_t, "network", B)

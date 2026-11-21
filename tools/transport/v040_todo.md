@@ -14,3 +14,7 @@ Sequence and release evidence for issues #22 and #23. An unchecked item is open 
 10. [ ] Qualified-workload GPU cost, useful-delivery scaling, lifecycle and full device sanitizer results.
 
 Validation should exercise the native simulation loop without policy training.
+
+### Native integration checkpoint
+
+Resident shared channel, sparse receiver inbox and full/partial reset tests are implemented. An environment reset clears traffic and backoff while preserving the absolute simulation clock. Per-lane resets discard the lane's sender state and suppress receivers observing packets submitted before their reset. The Python environment can use native capture or ordinary stepping. Verified with 77 Python passes, one skip and five passing CTests on the RTX 5070 Ti. The initial contract permits one offer per sender at each tick boundary.

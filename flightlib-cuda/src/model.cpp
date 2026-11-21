@@ -109,6 +109,8 @@ void configure(Simulation& sim,const std::vector<ModelConfig>& models,const std:
     }
   }
   auto table=prepareModels(models);auto schedule=prepareSchedule(dt,max_dt, v.schedule.substep_dt.size());
+  if(v.network.offers.data && std::llround(double(dt)*1e9)!=v.network.tick_ns)
+    throw std::invalid_argument("reconstruct the channel to change its tick");
   if(v.sensor_truth.samples.data){
     if(std::llround(double(dt)*1e9)!=v.sensor_step_ns)
       throw std::invalid_argument("reconstruct sensors to change the control period");

@@ -189,6 +189,10 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
     throw std::invalid_argument("invalid barometer atmosphere");
   const Offset baroPackets=capacity(config.barometer,false),baroQueue=capacity(config.barometer,true);
   const Offset odomPackets=capacity(config.odometry,false),odomQueue=capacity(config.odometry,true);
+  const Offset F = config.network_fanin, B = F ? N : 0;
+  if(F && (multiply(N,F)>Offset(INT32_MAX)*128 || F>A || !config.network_tick_ns || !config.shared_profile.slot_ns ||
+           !config.shared_profile.window_slots || !config.shared_profile.ns_per_byte))
+    throw std::invalid_argument("invalid shared channel capacity, clock or profile");
   AllocationPlan result;
 #define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);
 #include "buffers.def"
@@ -222,6 +226,8 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.topology.batch = makeBatchShape(config.environments, config.slots);
   s->views.swarm.radius=config.agent_collision_radius;
   s->views.swarm.terminate=config.terminate_on_agent_collision;
+  s->views.network.profile=config.shared_profile;
+  s->views.network.tick_ns=config.network_tick_ns;
   s->views.sensor_step_ns=config.sensor_step_ns;
   s->views.imu.settings=config.imu;
   s->views.odometry.settings=config.odometry;
@@ -234,6 +240,9 @@ Simulation::Simulation(const RuntimeConfig& config) {
   check(cudaMemsetAsync(s->arena, 0, s->plan.arena_bytes, s->stream), "initialize arena");
   const Offset count = std::max({Offset{s->views.topology.batch.lanes},
                                  Offset{config.instances}, Offset{config.rays}});
+  if(s->views.network.sources.data)
+    check(cudaMemsetAsync(s->views.network.sources.data,0xff,
+          s->views.network.sources.shape[0]*s->views.network.sources.shape[1]*sizeof(Index), s->stream),"initialize network subscriptions");
   initialize<<<static_cast<unsigned>((count + 255) / 256), 256, 0, s->stream>>>(s->views, config.seed);
   check(cudaGetLastError(), "initialize views");
   check(cudaEventRecord(s->tail, s->stream), "record initialization");

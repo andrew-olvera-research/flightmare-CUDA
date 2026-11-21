@@ -11,7 +11,7 @@ __device__ unsigned backoff(Time row, Time sequence, SharedProfile profile) {
 }
 
 __global__ void step(unsigned n, unsigned dt, SharedProfile p, Medium* media,
-                     const Frame* offers, Sender* senders, Reception* results) {
+                     const Frame* offers, Sender* senders, Reception* results, const std::uint8_t* active) {
   __shared__ unsigned minimum, contenders, longest;
   __shared__ Medium m;
   if (!threadIdx.x) m = media[blockIdx.x];
@@ -30,8 +30,10 @@ __global__ void step(unsigned n, unsigned dt, SharedProfile p, Medium* media,
     auto offer = offers[base+j];
     auto& r = results[base+j];
     r = {};
+    if (active && !active[base+j]) { s = {}; continue; }
     if (!offer.bytes) continue;
     if (s.phase != Phase::Empty) { r.admission = Admission::Full; continue; }
+    s.submitted = m.now;
     s.frame = offer;
     s.remaining = backoff(base+j, ++s.sequence, p);
     s.phase = Phase::Waiting;
@@ -115,11 +117,11 @@ __global__ void step(unsigned n, unsigned dt, SharedProfile p, Medium* media,
 }
 }
 void advanceShared(unsigned domains, unsigned stations, unsigned dt, SharedProfile p,
-                   Medium* m, const Frame* f, Sender* s, Reception* r, cudaStream_t stream) {
+                   Medium* m, const Frame* f, Sender* s, Reception* r, cudaStream_t stream, const std::uint8_t* active) {
   if (!domains || domains > INT32_MAX || !stations || !dt || !p.window_slots ||
       !p.slot_ns || !p.ns_per_byte || !m || !f || !s || !r)
     throw std::invalid_argument("invalid shared channel configuration");
-  step<<<domains,128,0,stream>>>(stations,dt,p,m,f,s,r);
+  step<<<domains,128,0,stream>>>(stations,dt,p,m,f,s,r,active);
   auto status = cudaGetLastError();
   if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
 }

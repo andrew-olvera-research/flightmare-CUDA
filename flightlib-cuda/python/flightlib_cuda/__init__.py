@@ -1,5 +1,6 @@
 """Resident Flightmare environment. Values may change; bound storage must not resize."""
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 from enum import IntEnum
 import torch
 from . import _native
@@ -190,12 +191,40 @@ class Core(_Resident):
         return result
 
 
+@dataclass(frozen=True)
+class NetworkConfig:
+    fanin: int = 1
+    slot_ns: int = 9000
+    window_slots: int = 16
+    ns_per_byte: int = 148
+    preamble_ns: int = 32000
+    recovery_ns: int = 72000
+    seed: int = 22
+
+
+class Network:
+    """Resident sender inputs and receiver inbox (valid, ID, submitted ns, arrival ns)."""
+    def __init__(self, native, environments, slots, fanin):
+        def borrow(name):
+            return torch.utils.dlpack.from_dlpack(native.tensor("network."+name))
+        raw = borrow("offers")
+        for name, offset, dtype in zip(
+            ("packet_id", "receivers", "erased", "receiver_base", "size", "broadcast"),
+            _native.frame_offsets,
+            (torch.int64, torch.int64, torch.int64, torch.uint32, torch.uint32, torch.uint8)
+        ):
+            width = dtype.itemsize
+            setattr(self, name, raw[:, offset:offset+width].view(dtype).view(environments, slots))
+        self.sources = borrow("sources").view(environments, slots, fanin)
+        self.inbox = borrow("inbox").view(environments, slots, fanin, 4)
+
+
 class Environment(_Resident):
     def __init__(self, environments, slots=1, control_dt=.01, device=0, seed=0,
                  models=None, model_ids=None, active=None, bounds=None, legacy=False,
                  scene=None, collision_radius=.15, terminate_on_collision=False,
                  agent_collisions=False, candidate_capacity=None, imu=None, odometry=None,
-                 subscriptions=(), auto_reset=True, barometer=None):
+                 subscriptions=(), auto_reset=True, barometer=None, network=None):
         if legacy and slots != 1:
             raise ValueError('legacy shapes require slots=1')
         self.environments, self.slots, self.device = environments, slots, torch.device('cuda', device)
@@ -214,13 +243,17 @@ class Environment(_Resident):
                 raise ValueError("candidate_capacity must be a positive uint32 capacity")
         elif candidate_capacity is not None:
             raise ValueError("candidate_capacity requires agent_collisions")
+        if network is not None and not isinstance(network, NetworkConfig):
+            raise TypeError("network must be a NetworkConfig")
         self._native = _native.NativeEnvironment(environments, slots, control_dt, device, seed,
                                                self.models, self.model_ids, self.active, self.bounds,
                                                candidate_capacity or 0, collision_radius if agent_collisions else 0.,
                                                terminate_on_collision, _sensor_settings(imu, ImuConfig),
                                                _sensor_settings(odometry, OdometryConfig),
-                                               _sensor_settings(barometer, BarometerConfig))
+                                               _sensor_settings(barometer, BarometerConfig),
+                                               asdict(network) if network is not None else {})
         self._native.auto_reset(auto_reset)
+        self.network = Network(self._native, environments, slots, network.fanin) if network is not None else None
         self.imu = SensorPackets(self._native,"imu") if imu is not None else None
         self.barometer = SensorPackets(self._native,"barometer") if barometer is not None else None
         self.odometry = SensorPackets(self._native,"odometry") if odometry is not None else None
