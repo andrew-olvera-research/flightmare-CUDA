@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 GIT = ['git', '-c', 'core.filemode=false', '-c', 'core.autocrlf=true']
 PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan',
-            'network-parity', 'network-api', 'network-health', 'network-performance')
+            'network-parity', 'network-api', 'network-health', 'network-performance', 'network-fidelity')
 
 
 def capture(args, root=ROOT):
@@ -138,13 +138,18 @@ def network_check(lane, runner, cuda_options):
     build = '/build/network-ci'
     targets = {'network-parity': ['packet_test', '_native'],
                'network-api': ['packet_test', 'shared_test', '_native'],
-               'network-health': ['packet_test'], 'network-performance': ['_native']}
+               'network-health': ['packet_test'], 'network-performance': ['_native'],
+               'network-fidelity': ['packet_test', 'shared_test']}
     runner.cmake('network', 'flightlib-cuda', build,
                  ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
                   '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
                   f'-DPython_EXECUTABLE={CUDA_PYTHON}', *cuda_options], targets=targets[lane])
     if lane == 'network-health':
         runner.run('packet-lifecycle-soak', [f'{build}/packet_test', '--soak'])
+    elif lane == 'network-fidelity':
+        cache = os.environ.get('FLIGHTMARE_MEASUREMENT_CACHE', '/build/network-measurements')
+        runner.run('measured-network', [sys.executable, 'tools/transport/check_fidelity.py',
+                   '--build', build, '--cache', cache, '--output', str(runner.directory)])
     elif lane == 'network-performance':
         runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))

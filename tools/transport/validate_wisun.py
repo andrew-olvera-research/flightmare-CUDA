@@ -99,8 +99,11 @@ def day_intervals(by_day):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv", type=Path)
-    parser.add_argument("packet_test", help="native CUDA test executable")
+    parser.add_argument("packet_test", nargs="?", help="native CUDA test executable")
+    parser.add_argument("--replay-output", type=Path, help="write held-out mask digits for separate replay")
     args = parser.parse_args()
+    if not (args.packet_test or args.replay_output):
+        parser.error("provide packet_test or --replay-output")
     fit, holdout, confirm = fortnight(8), fortnight(9), fortnight(10)
     days = read_bursts(args.csv, set(fit + holdout + confirm))
     train = [mask for day in fit for mask in days[day]]
@@ -112,10 +115,16 @@ def main():
         if int(replay) != len(masks):
             raise RuntimeError("incomplete CUDA replay")
 
-    replay_masks(test)
     scores = {k: compare(p, observed) for k, p in baselines(profile).items()}
     october = [mask for day in confirm for mask in days[day]]
-    replay_masks(october)
+    replay_counts = {}
+    if args.replay_output:
+        args.replay_output.write_bytes(bytes(48 + m for m in test + october))
+    if args.packet_test:
+        replay_masks(test)
+        replay_masks(october)
+        replay_counts = dict(cuda_replayed_attempts=3*len(test),
+                             october_cuda_replayed_attempts=3*len(october))
     # Frozen after September, before October evaluation. Below 20 events
     # there is insufficient evidence to qualify the rare-event criterion.
     confirmation = {}
@@ -134,12 +143,11 @@ def main():
                       "holdout_counts_by_day": {d: len(days[d]) for d in holdout},
                       "profile_mask_probabilities": profile,
                       "holdout_mask_counts": [test.count(mask) for mask in range(8)],
-                      "cuda_replayed_attempts": 3*len(test),
+                      **replay_counts,
                       "observed": metrics(observed),
                       "holdout_day_bootstrap_95": day_intervals({d: days[d] for d in holdout}),
                       "limits": LIMITS, "models": scores,
                       "october_counts_by_day": {d: len(days[d]) for d in confirm},
-                      "october_cuda_replayed_attempts": 3*len(october),
                       "october_observed": metrics(distribution(october)),
                       "october_day_bootstrap_95": day_intervals({d: days[d] for d in confirm}),
                       "october_limits": {"min_complete_misses": 20, "miss_ratio": [.5, 2.]},

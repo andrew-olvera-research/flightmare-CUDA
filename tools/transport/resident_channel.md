@@ -35,6 +35,20 @@ Run the native consumer example with `/build/network-ci/shared_test --continuati
 
 For receiver-specific sampling, set range_edges_m and populate loss_after_rx and loss_after_miss with directed loss probabilities per receiver edge and distance band. Geometry is sampled at the end of each control step; residual loss is sampled after shared-medium delivery. Calibrate conditional receiver loss separately from contention to avoid charging the same losses twice. Configure equally sized carrier-sense groups with carrier_group_size and assign hidden_sources per subscribed edge. A transmission from a listed sender in another group erases a frame if their on-air intervals overlap. This is a binary overlap rule; power capture and waveform interaction remain outside its validation.
 
+## Running the checks
+
+From the repository root, run `docker compose exec -T dev python3 scripts/local_ci.py PROFILE` or `scripts/check.ps1 PROFILE`. Each run writes its report, step times and logs under `.local-ci/`.
+
+| Profile | Evidence |
+| --- | --- |
+| `network-parity` | Directed FIFO and shared slot-clock comparisons with independent CPU references. Native and Python JUnit files identify the failing case. |
+| `network-api` | Native timelines, output bounds, broadcast and public environment contracts. |
+| `network-health` | Saturated packet accounting over 67,108,864 link intervals, including repeated allocation and release. Free device memory is diagnostic. The existing `sanitize` profile exercises leak and race instrumentation on a supported device. |
+| `network-performance` | Three rounds of CUDA event timings across four batch shapes, each with plant-only, shared and sampled steps. The JSON lines are in `resident-step.log`. |
+| `network-fidelity` | Offline measured replay, fitted-profile error and saturated throughput. Detailed per-source metrics and thresholds are in `fidelity.json` and its accompanying reports. |
+
+Place the six Bristol files and pinned Wi-SUN `data_5563.csv` in `/build/network-measurements` inside the container, or set `FLIGHTMARE_MEASUREMENT_CACHE` to their directory. The source validators check the file digests. A missing input, replay discrepancy, or loss of a previously qualified measurement range fails the evidence gate. Individual physical fits can remain rejected when the gate passes. Read each scope's verdict before using it. The independent ns-3 comparison is documented in `ns3_comparison.md`.
+
 ## Evidence
 
 The Bristol holdout validator verifies the source hashes in four complete vehicle logs plus one 16 MiB roadside transmitter excerpt per session. It joins vehicle receptions by the transmitter MAC from the authors' mapping and packet identifiers. The fit uses February 11 and the untouched-day score uses February 13, 2019. A receiver's nearest TX GPS fix within 250 ms defines positional coverage. For the roadside broadcast subset, both vehicles must have bracketing fixes within 250 ms. Single-direction delivery is evaluated within distance bands. Uncertainty is estimated by resampling whole minutes. The excerpt selection is for descriptive multi-receiver replay. The CSV timestamp definition and available clock evidence do not qualify one-way deadlines. [Authors' dataset](https://doi.org/10.5523/bris.eupowp7h3jl525yxhm3521f57) · [Authors' MAC mapping](https://github.com/v2x-dev/ITS-G5_trials/blob/c6e570575c40e43c2d59d7160580abe9a020ff5a/macAddresses/macAddresses.mat) · [Held-out result](bristol_holdout.json)
