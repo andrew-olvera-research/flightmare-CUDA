@@ -79,11 +79,14 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
     const auto& net=v.network;
     auto domain=n/v.topology.batch.slots_per_environment;
     net.reset_ns(n)=reinterpret_cast<packet::Medium*>(net.media.data)[domain].now;
-    reinterpret_cast<packet::Frame*>(net.offers.data)[n]={};
+    for(Offset row=n;row<net.offers.shape[0];row+=v.topology.batch.lanes){
+      reinterpret_cast<packet::Frame*>(net.offers.data)[row]={};
+      reinterpret_cast<packet::Reception*>(net.results.data)[row]={};
+      for(Offset k=0;k<net.sources.shape[1];++k)
+        for(unsigned f=0;f<6;++f)net.inbox(row,k,f)=0;
+    }
     reinterpret_cast<packet::Sender*>(net.senders.data)[n]={};
-    reinterpret_cast<packet::Reception*>(net.results.data)[n]={};
-    for(Offset k=0;k<net.sources.shape[1];++k)
-      for(unsigned f=0;f<4;++f)net.inbox(n,k,f)=0;
+
   }
   v.episodes.command_time(n)=0;v.episodes.step(n)=0;++v.episodes.episode(n);
   if(source==ResetSource::Random)v.episodes.random_counter(n)+=10;
@@ -274,17 +277,18 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
 }
 __global__ void collectPackets(NetworkBuffers net, const Mask* active, Index slots){
   Offset edge=Offset(blockIdx.x)*blockDim.x+threadIdx.x;
-  Offset fan=net.sources.shape[1], n=edge/fan, k=edge%fan;
-  if(n>=net.sources.shape[0])return;
+  Offset fan=net.sources.shape[1], row=edge/fan, k=edge%fan;
+  if(row>=net.inbox.shape[0])return;
+  Offset n=row%net.sources.shape[0];
   Index source=net.sources(n,k), receiver=n%slots;
-  auto* fields=net.inbox.data+edge*4;
-  for(unsigned i=0;i<4;++i)fields[i]=0;
+  auto* fields=net.inbox.data+edge*6;
+  for(unsigned i=0;i<6;++i)fields[i]=0;
   if(source>=slots || !active[n])return;
-  Offset lane=n-receiver+source;
+  Offset lane=row-receiver+source;
   auto r=reinterpret_cast<const packet::Reception*>(net.results.data)[lane];
-  auto submitted=reinterpret_cast<const packet::Sender*>(net.senders.data)[lane].submitted;
+  auto submitted=r.submitted;
   if(submitted>=net.reset_ns(n) && packet::receivedBy(r,source,receiver,slots)){
-    fields[0]=1;fields[1]=r.id;fields[2]=submitted;fields[3]=r.arrival;
+    fields[0]=1;fields[1]=r.id;fields[2]=submitted;fields[3]=r.arrival;fields[4]=r.attempt_id;fields[5]=r.handle;
   }
 }
 __global__ void resetQuietMedium(RuntimeViews v){
@@ -329,11 +333,11 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
   if(v.network.offers.data){
     auto& net=v.network;
     auto batch=v.topology.batch;
-    packet::advanceShared(batch.environments,batch.slots_per_environment,net.tick_ns,net.profile,
+    packet::advanceSharedSchedule(batch.environments,batch.slots_per_environment,net.tick_ns,net.profile,
         reinterpret_cast<packet::Medium*>(net.media.data),reinterpret_cast<packet::Frame*>(net.offers.data),
         reinterpret_cast<packet::Sender*>(net.senders.data),reinterpret_cast<packet::Reception*>(net.results.data),
-        stream,v.topology.active.data);
-    Offset edges=net.sources.shape[0]*net.sources.shape[1];
+        stream,v.topology.active.data,net.offsets.shape[0],net.offsets.data);
+    Offset edges=net.inbox.shape[0]*net.sources.shape[1];
     collectPackets<<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,batch.slots_per_environment);
   }
   if(v.sensor_truth.samples.data)detail::launchSensors(v,stream,first);

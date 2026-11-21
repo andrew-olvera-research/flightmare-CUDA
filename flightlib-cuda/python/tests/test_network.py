@@ -22,9 +22,9 @@ def test_resident_channel(graph):
     env.step(graph=graph, random=False, stream=stream)
     with env.access(stream):
         rows = net.inbox.cpu().tolist()
-    assert rows[0][0][0] == [0]*4
-    assert rows[0][1][0] == [1,73,0,46800]
-    assert rows[1][1][0] == [0]*4
+    assert rows[0][0][0] == [0]*6
+    assert rows[0][1][0] == [1,73,0,46800,0,0]
+    assert rows[1][1][0] == [0]*6
     assert rows[1][2][0] == rows[0][1][0]
 
 
@@ -44,8 +44,8 @@ def test_receiver_reset_during_transmission():
     net.size.zero_()
     env.step(random=False)
     rows = net.inbox.cpu().tolist()[0]
-    assert rows[1][0] == [0]*4
-    assert rows[2][0] == [1,91,0,14832000]
+    assert rows[1][0] == [0]*6
+    assert rows[2][0] == [1,91,0,14832000,0,0]
 
 def test_full_reset_cancels_pending_airtime():
     env = Environment(1, 2, network=NetworkConfig(window_slots=1), auto_reset=False)
@@ -60,4 +60,24 @@ def test_full_reset_cancels_pending_airtime():
     net.size[0,0] = 10
     net.broadcast[0,0] = 1
     env.step(random=False)
-    assert net.inbox[0,1,0].tolist() == [1,0,10000000,10033480]
+    assert net.inbox[0,1,0].tolist() == [1,0,10000000,10033480,0,0]
+
+def test_timestamped_offers_with_expiry_and_opaque_handle():
+    config = NetworkConfig(window_slots=1, offsets_ns=(0, 1_000_000, 2_000_000))
+    env = Environment(1, 2, network=config, auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.size[:,0,0].fill_(100)
+    net.broadcast[:,0,0].fill_(1)
+    net.packet_id[:,0,0].fill_(10)
+    net.attempt_id[:,0,0].copy_(torch.tensor([1,2,3], device=env.device))
+    net.handle[:,0,0].fill_(42)
+    net.expiry_ns[1,0,0] = 1_000_100
+    env.capture(random=False)
+    env.step(graph=True, random=False)
+    assert net.evaluator["completed_handle"][:,0,0].tolist() == [42,42,42]
+    assert net.evaluator["expired"][:,0,0].tolist() == [0,1,0]
+    rows = net.inbox[:,0,1,0].tolist()
+    assert rows == [[1,10,0,46800,1,42], [0]*6, [1,10,2000000,2046800,3,42]]

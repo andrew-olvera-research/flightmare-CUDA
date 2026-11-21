@@ -18,3 +18,7 @@ Validation should exercise the native simulation loop without policy training.
 ### Native integration checkpoint
 
 Resident shared channel, sparse receiver inbox and full/partial reset tests are implemented. An environment reset clears traffic and backoff while preserving the absolute simulation clock. Per-lane resets discard the lane's sender state and suppress receivers observing packets submitted before their reset. The Python environment can use native capture or ordinary stepping. Verified with 77 Python passes, one skip and five passing CTests on the RTX 5070 Ti. The initial contract permits one offer per sender at each tick boundary.
+
+### Batched timeline checkpoint
+
+Added fixed, arbitrary nanosecond submission offsets within a plant tick. Each offset has one offer slot per sender, a separate admission/completion result, and a reserved receiver event row per subscribed edge. The CUDA block advances the complete schedule in one launch. Frames carry logical and attempt IDs, absolute expiry and opaque payload handle. Receiver observations expose only live deliveries. The evaluator returns completion handles even for in-flight expiry. The caller retains payload storage through completion or episode cancellation. Dynamic output limits, explicit continuation and the independent shared-timeline CPU oracle remain open.

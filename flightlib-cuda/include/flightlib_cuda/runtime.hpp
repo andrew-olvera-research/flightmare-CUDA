@@ -61,6 +61,7 @@ struct RuntimeConfig {
   SensorSettings imu{}, odometry{}, barometer{};
   packet::SharedProfile shared_profile{};
   Index network_tick_ns{}, network_fanin{};
+  std::vector<Index> network_offsets{0};
 };
 
 struct SwarmCollision {
@@ -76,6 +77,7 @@ struct NetworkBuffers {
   Matrix<Index> sources;
   TensorView<std::uint64_t,3> inbox;
   Vector<std::uint64_t> reset_ns;
+  Vector<Index> offsets;
   packet::SharedProfile profile{};
   Index tick_ns{};
 };

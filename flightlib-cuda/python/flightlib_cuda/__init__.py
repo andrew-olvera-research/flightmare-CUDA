@@ -193,6 +193,7 @@ class Core(_Resident):
 
 @dataclass(frozen=True)
 class NetworkConfig:
+    offsets_ns: tuple = (0,)
     fanin: int = 1
     slot_ns: int = 9000
     window_slots: int = 16
@@ -203,20 +204,30 @@ class NetworkConfig:
 
 
 class Network:
-    """Resident sender inputs and receiver inbox (valid, ID, submitted ns, arrival ns)."""
-    def __init__(self, native, environments, slots, fanin):
+    """Inbox fields: valid, ID, submitted ns, arrival ns, attempt ID, payload handle."""
+    def __init__(self, native, environments, slots, config):
+        fanin = config.fanin
+        shape = (environments, slots) if len(config.offsets_ns)==1 else (len(config.offsets_ns), environments, slots)
         def borrow(name):
             return torch.utils.dlpack.from_dlpack(native.tensor("network."+name))
         raw = borrow("offers")
         for name, offset, dtype in zip(
-            ("packet_id", "receivers", "erased", "receiver_base", "size", "broadcast"),
+            ("packet_id", "receivers", "erased", "receiver_base", "size", "broadcast", "attempt_id", "handle", "expiry_ns"),
             _native.frame_offsets,
-            (torch.int64, torch.int64, torch.int64, torch.uint32, torch.uint32, torch.uint8)
+            (torch.int64, torch.int64, torch.int64, torch.uint32, torch.uint32, torch.uint8, torch.int64, torch.int64, torch.int64)
         ):
             width = dtype.itemsize
-            setattr(self, name, raw[:, offset:offset+width].view(dtype).view(environments, slots))
+            setattr(self, name, raw[:, offset:offset+width].view(dtype).view(shape))
+        results = borrow("results")
+        self.evaluator = {
+            key: results[:, offset:offset+dtype.itemsize].view(dtype).view(shape)
+            for key, offset, dtype in zip(
+                ("admission","completed","collided","expired","completed_handle"),
+                _native.completion_offsets,
+                (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64))
+        }
         self.sources = borrow("sources").view(environments, slots, fanin)
-        self.inbox = borrow("inbox").view(environments, slots, fanin, 4)
+        self.inbox = borrow("inbox").view(*shape, fanin, 6)
 
 
 class Environment(_Resident):
@@ -253,7 +264,7 @@ class Environment(_Resident):
                                                _sensor_settings(barometer, BarometerConfig),
                                                asdict(network) if network is not None else {})
         self._native.auto_reset(auto_reset)
-        self.network = Network(self._native, environments, slots, network.fanin) if network is not None else None
+        self.network = Network(self._native, environments, slots, network) if network is not None else None
         self.imu = SensorPackets(self._native,"imu") if imu is not None else None
         self.barometer = SensorPackets(self._native,"barometer") if barometer is not None else None
         self.odometry = SensorPackets(self._native,"odometry") if odometry is not None else None

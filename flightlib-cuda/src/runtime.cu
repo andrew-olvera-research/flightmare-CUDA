@@ -190,7 +190,14 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset baroPackets=capacity(config.barometer,false),baroQueue=capacity(config.barometer,true);
   const Offset odomPackets=capacity(config.odometry,false),odomQueue=capacity(config.odometry,true);
   const Offset F = config.network_fanin, B = F ? N : 0;
-  if(F && (multiply(N,F)>Offset(INT32_MAX)*128 || F>A || !config.network_tick_ns || !config.shared_profile.slot_ns ||
+  const Offset segments=B?config.network_offsets.size():0;
+  if(B && (!segments || segments>=kInvalidIndex || config.network_offsets.front()!=0 ||
+      config.network_offsets.back()>=config.network_tick_ns ||
+      std::adjacent_find(config.network_offsets.begin(),config.network_offsets.end(),
+                         std::greater_equal<Index>())!=config.network_offsets.end()))
+    throw std::invalid_argument("invalid packet submission offsets");
+  const Offset rows=multiply(B,segments);
+  if(F && (multiply(rows,F)>Offset(INT32_MAX)*128 || F>A || !config.network_tick_ns || !config.shared_profile.slot_ns ||
            !config.shared_profile.window_slots || !config.shared_profile.ns_per_byte))
     throw std::invalid_argument("invalid shared channel capacity, clock or profile");
   AllocationPlan result;
@@ -240,6 +247,9 @@ Simulation::Simulation(const RuntimeConfig& config) {
   check(cudaMemsetAsync(s->arena, 0, s->plan.arena_bytes, s->stream), "initialize arena");
   const Offset count = std::max({Offset{s->views.topology.batch.lanes},
                                  Offset{config.instances}, Offset{config.rays}});
+  if(s->views.network.offsets.data)
+    check(cudaMemcpyAsync(s->views.network.offsets.data,config.network_offsets.data(),
+        config.network_offsets.size()*sizeof(Index),cudaMemcpyHostToDevice,s->stream),"upload packet offsets");
   if(s->views.network.sources.data)
     check(cudaMemsetAsync(s->views.network.sources.data,0xff,
           s->views.network.sources.shape[0]*s->views.network.sources.shape[1]*sizeof(Index), s->stream),"initialize network subscriptions");

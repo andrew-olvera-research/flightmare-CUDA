@@ -4,7 +4,9 @@
 namespace flightlib_cuda::packet {
 // A medium is a fully connected contention domain. One row per sender.
 // receivers and erased are masks relative to receiver_base within the medium.
-struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; std::uint8_t all_peers = 0; };
+struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; std::uint8_t all_peers = 0;
+  Time attempt_id{}, handle{}, expiry_ns{}; // absolute simulation ns; zero disables expiry
+};
 struct SharedProfile {
   unsigned slot_ns, window_slots, ns_per_byte, preamble_ns, recovery_ns, seed;
 };
@@ -24,11 +26,13 @@ struct Reception {
   // For all_peers, receivers holds exclusions in the receiver_base mask window.
   bool all_peers;
   Admission admission;
+  Time submitted, attempt_id, handle;
+  bool expired;
 };
 // Expand a completion on demand. Full-domain broadcast excludes its source.
 __host__ __device__ inline bool receivedBy(const Reception& r, unsigned sender,
                                            unsigned receiver, unsigned stations) {
-  if (!r.completed || r.collided) return false;
+  if (!r.completed || r.collided || r.expired) return false;
   unsigned offset = receiver - r.receiver_base;
   bool masked = receiver >= r.receiver_base && offset < 64 && ((r.receivers >> offset) & 1);
   return r.all_peers ? receiver < stations && receiver != sender && !masked : masked;
@@ -41,4 +45,9 @@ __host__ __device__ inline bool receivedBy(const Reception& r, unsigned sender,
 // All arrays must be disjoint and retained on the stream's device until done.
 void advanceShared(unsigned domains, unsigned stations, unsigned dt_ns, SharedProfile,
                    Medium*, const Frame*, Sender*, Reception*, cudaStream_t, const std::uint8_t* active=nullptr);
+// Setup validates ascending tick offsets (first zero, last below dt). Supply the
+// immutable device copy and disjoint offers/results laid out [segments,domains,stations].
+void advanceSharedSchedule(unsigned domains,unsigned stations,unsigned dt,SharedProfile,
+    Medium*,const Frame*,Sender*,Reception*,cudaStream_t,const std::uint8_t* active,
+    unsigned segments,const unsigned* offsets);
 } // namespace flightlib_cuda::packet
