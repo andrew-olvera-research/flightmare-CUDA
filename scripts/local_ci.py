@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT = ['git', '-c', 'core.filemode=false', '-c', 'core.autocrlf=true']
-PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan')
+PROFILES = ('fast', 'verify', 'release', 'legacy', 'doctor', 'sanitize', 'ubsan', 'network-parity')
 
 
 def capture(args, root=ROOT):
@@ -119,6 +119,22 @@ class Runner:
 def execute(profile, runner):
     arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
     cuda_options = [f'-DCMAKE_CUDA_ARCHITECTURES={arch}']
+    if profile == 'network-parity':
+        build = '/build/network-ci'
+        python = '/build/flightlib-cuda-python/bin/python'
+        runner.cmake('network', 'flightlib-cuda', build,
+                     ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
+                      '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
+                      f'-DPython_EXECUTABLE={python}', *cuda_options],
+                     targets=['packet_test', '_native'])
+        runner.run('fifo-parity', ['ctest', '--test-dir', build, '-L', '^network-parity$',
+                   '--output-on-failure', '--no-tests=error', '--output-junit',
+                   str(runner.directory / 'native-parity.xml')])
+        runner.run('slot-parity', [python, '-m', 'pytest', '-q',
+                   'flightlib-cuda/python/tests/test_network_oracle.py',
+                   f'--junitxml={runner.directory / "slot-parity.xml"}'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        return
     if profile in ('fast', 'verify'):
         runner.run('harness', [sys.executable, '-m', 'unittest', 'discover',
                                '-s', 'scripts/tests', '-v'])

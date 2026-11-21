@@ -67,4 +67,13 @@ def test_independent_slot_clock():
             expected.append([[received.get(s,[0]*6) if s!=rx else [0]*6 for s in range(n)]
                              for rx in range(n)])
         env.step(random=False)
-        assert net.inbox[:,0].tolist() == expected
+        inbox = net.inbox[:, 0].tolist()
+        for segment, receivers in enumerate(expected):
+            for receiver, senders in enumerate(receivers):
+                for sender, event in enumerate(senders):
+                    actual = inbox[segment][receiver][sender]
+                    assert actual == event, (
+                        f"traffic_seed=123 backoff_seed={p.seed} env=0 tick={step} "
+                        f"segment={segment} sender={sender} receiver={receiver} "
+                        f"expected={event} actual={actual}"
+                    )

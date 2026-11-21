@@ -41,53 +41,7 @@ void replayBursts(const std::vector<unsigned>& masks) {
             state[i].accepted == 3 && state[i].tx_free == 960 && state[i].size == 0);
   }
 }
-int main(int argc, char** argv) {
-  if (argc == 2 && std::string(argv[1]) == "--replay") {
-    std::vector<unsigned> masks;
-    char c;
-    size_t bursts = 0;
-    while (std::cin.get(c)) {
-      if (c < '0' || c > '7') throw std::invalid_argument("expected burst mask digit");
-      masks.push_back(static_cast<unsigned>(c-'0'));
-      ++bursts;
-      if (masks.size() == 4096) {
-        replayBursts(masks);
-        masks.clear();
-      }
-    }
-    require(std::cin.eof() && bursts);
-    if (!masks.empty()) replayBursts(masks);
-    std::cout << bursts << "\n";
-    return 0;
-  }
-  if (argc != 1) return 2;
-  replayBursts({0,1,2,3,4,5,6,7});
-  // Hand timeline: 2 bytes at 3 ns/byte + 4 ns propagation arrive at 10.
-  Channel single(1, 2, 5);
-  single.profiles.upload({{3,4}});
-  single.attempts.upload({{7,10,2}});
-  single.run(nullptr);
-  require(single.results.read()[0].delivered == 0);
-  single.attempts.upload({{}});
-  single.run(nullptr);
-  require(single.results.read()[0].delivered == 1);
-  auto first = single.output.read()[0];
-  require(first.id == 7 && first.arrival_ns == 10);
-
-  Channel whole(1, 2, 10);
-  whole.profiles.upload({{3,4}});
-  whole.attempts.upload({{7,10,2}});
-  whole.run(nullptr);
-  auto unsplit = whole.output.read()[0];
-  require(whole.results.read()[0].delivered == 1 &&
-          unsplit.id == first.id && unsplit.arrival_ns == first.arrival_ns);
-  auto at_limit = whole.state.read();
-  at_limit[0].now = ~Time{0} - 1;
-  whole.state.upload(at_limit);
-  whole.run(nullptr);
-  require(whole.results.read()[0].admission == Admission::ClockOverflow);
-  require(whole.state.read()[0].now == at_limit[0].now);
-
+void fifoParity() {
   constexpr unsigned n = 257, capacity = 4;
   Channel channel(n, capacity, 1);
   std::vector<Profile> profiles(n);
@@ -121,17 +75,78 @@ int main(int argc, char** argv) {
           q.push_back({a.id,arrival});
         }
       }
-      require(results[i].admission == expected);
+      auto compare = [&](const char* field, Time want, Time got) {
+        if (want == got) return;
+        std::cerr << "fifo seed=22 tick=" << step << " link=" << i << " " << field
+                  << " expected=" << want << " actual=" << got << '\n';
+        throw std::runtime_error("directed FIFO parity");
+      };
+      compare("admission", unsigned(expected), unsigned(results[i].admission));
       unsigned count = 0;
       while (!q.empty() && q.front().arrival_ns <= now+channel.tick) {
         Event actual = events[i*capacity+count++];
-        require(actual.id == q.front().id && actual.arrival_ns == q.front().arrival_ns);
+        compare("id", q.front().id, actual.id);
+        compare("arrival_ns", q.front().arrival_ns, actual.arrival_ns);
         q.pop_front();
       }
-      require(count == results[i].delivered);
+      compare("delivered", count, results[i].delivered);
     }
     now += channel.tick;
   }
+}
+
+int main(int argc, char** argv) {
+  if (argc == 2 && std::string(argv[1]) == "--replay") {
+    std::vector<unsigned> masks;
+    char c;
+    size_t bursts = 0;
+    while (std::cin.get(c)) {
+      if (c < '0' || c > '7') throw std::invalid_argument("expected burst mask digit");
+      masks.push_back(static_cast<unsigned>(c-'0'));
+      ++bursts;
+      if (masks.size() == 4096) {
+        replayBursts(masks);
+        masks.clear();
+      }
+    }
+    require(std::cin.eof() && bursts);
+    if (!masks.empty()) replayBursts(masks);
+    std::cout << bursts << "\n";
+    return 0;
+  }
+  if (argc == 2 && std::string(argv[1]) == "--fifo") {
+    fifoParity();
+    return 0;
+  }
+  if (argc != 1) return 2;
+  replayBursts({0,1,2,3,4,5,6,7});
+  // Hand timeline: 2 bytes at 3 ns/byte + 4 ns propagation arrive at 10.
+  Channel single(1, 2, 5);
+  single.profiles.upload({{3,4}});
+  single.attempts.upload({{7,10,2}});
+  single.run(nullptr);
+  require(single.results.read()[0].delivered == 0);
+  single.attempts.upload({{}});
+  single.run(nullptr);
+  require(single.results.read()[0].delivered == 1);
+  auto first = single.output.read()[0];
+  require(first.id == 7 && first.arrival_ns == 10);
+
+  Channel whole(1, 2, 10);
+  whole.profiles.upload({{3,4}});
+  whole.attempts.upload({{7,10,2}});
+  whole.run(nullptr);
+  auto unsplit = whole.output.read()[0];
+  require(whole.results.read()[0].delivered == 1 &&
+          unsplit.id == first.id && unsplit.arrival_ns == first.arrival_ns);
+  auto at_limit = whole.state.read();
+  at_limit[0].now = ~Time{0} - 1;
+  whole.state.upload(at_limit);
+  whole.run(nullptr);
+  require(whole.results.read()[0].admission == Admission::ClockOverflow);
+  require(whole.state.read()[0].now == at_limit[0].now);
+
+  fifoParity();
   // Exercise bounded storage across repeated construction and saturated runs.
   // cudaMemGetInfo is diagnostic on a shared GPU; conservation is a hard gate.
   size_t free_before, free_after, total;
