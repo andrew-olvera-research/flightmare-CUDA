@@ -74,10 +74,12 @@ def test_timestamped_offers_with_expiry_and_opaque_handle():
     net.packet_id[:,0,0].fill_(10)
     net.attempt_id[:,0,0].copy_(torch.tensor([1,2,3], device=env.device))
     net.handle[:,0,0].fill_(42)
+    net.fixture_label[2,0,0] = 7
     net.expiry_ns[1,0,0] = 1_000_100
     env.capture(random=False)
     env.step(graph=True, random=False)
     assert net.evaluator["completed_handle"][:,0,0].tolist() == [42,42,42]
+    assert net.evaluator["fixture_label"][:,0,0].tolist() == [0,0,7]
     assert net.evaluator["expired"][:,0,0].tolist() == [0,1,0]
     rows = net.inbox[:,0,1,0].tolist()
     assert rows == [[1,10,0,46800,1,42], [0]*6, [1,10,2000000,2046800,3,42]]
@@ -98,3 +100,25 @@ def test_directional_distance_and_loss_memory():
     for far in (0,1,0,1):
         env.step(graph=True,random=False)
         assert net.inbox[0,:,0,0].tolist() == [0,1,far]
+
+def test_hidden_sender_overlap_survives_tick_boundary():
+    env=Environment(1,4,network=NetworkConfig(window_slots=1, carrier_group_size=2, hidden_per_edge=1),
+                    auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net=env.network
+    net.sources.zero_()
+    net.hidden_sources[0,1,0,0]=2
+    net.size[0,0]=100000
+    net.size[0,2]=100
+    net.broadcast.fill_(1)
+    env.step(random=False)
+    net.size.zero_()
+    env.step(random=False)
+    assert net.inbox[0,:,0,0].tolist()==[0,0,1,1]
+
+def test_versioned_network_profile():
+    from pathlib import Path
+    profile = Path(__file__).resolve().parents[3]/"tools/transport/shared_basic_v1.json"
+    config = NetworkConfig.from_profile(profile, fanin=2)
+    assert config.ns_per_byte == 148 and config.fanin == 2

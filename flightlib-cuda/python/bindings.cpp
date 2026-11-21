@@ -136,6 +136,8 @@ struct NativeEnvironment {
       auto period=std::llround(double(dt)*1e9);
       if(period<1 || period>UINT32_MAX)throw std::invalid_argument("unsupported network tick");
       c.network_tick_ns=period;
+      c.carrier_group_size=network["carrier_group_size"].cast<Index>();
+      c.hidden_per_edge=network["hidden_per_edge"].cast<Index>();
       c.network_fanin=network["fanin"].cast<Index>();
       if(!network["range_edges_m"].is_none()){
         c.network_sample_loss=true;
@@ -233,10 +235,10 @@ struct NativeExport {
 PYBIND11_MODULE(_native,m){
   using flightlib_cuda::packet::Frame;
   m.attr("frame_offsets")=py::make_tuple(offsetof(Frame,id),offsetof(Frame,receivers),offsetof(Frame,erased),
-      offsetof(Frame,receiver_base),offsetof(Frame,bytes),offsetof(Frame,all_peers),offsetof(Frame,attempt_id),offsetof(Frame,handle),offsetof(Frame,expiry_ns));
+      offsetof(Frame,receiver_base),offsetof(Frame,bytes),offsetof(Frame,all_peers),offsetof(Frame,attempt_id),offsetof(Frame,handle),offsetof(Frame,expiry_ns),offsetof(Frame,fixture_label));
   using flightlib_cuda::packet::Reception;
   m.attr("completion_offsets")=py::make_tuple(offsetof(Reception,admission),offsetof(Reception,completed),
-      offsetof(Reception,collided),offsetof(Reception,expired),offsetof(Reception,handle));
+      offsetof(Reception,collided),offsetof(Reception,expired),offsetof(Reception,handle),offsetof(Reception,fixture_label));
   m.def("profile_start",[]{if(cudaProfilerStart()!=cudaSuccess)throw std::runtime_error("profiler start failed");});
   m.def("profile_stop",[]{if(cudaProfilerStop()!=cudaSuccess)throw std::runtime_error("profiler stop failed");});
   py::class_<ModelConfig>(m,"ModelConfig").def(py::init<>())

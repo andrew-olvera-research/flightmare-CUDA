@@ -87,13 +87,15 @@ FLC_SENSOR(odometry,10,odomPackets,odomQueue)
 FLC_BUFFER(imu.drift,Scalar,"sensors",6,imuPackets ? N : 0)
 #undef FLC_SENSOR
 
-FLC_BUFFER(network.media, Mask, "network", B ? E : 0, sizeof(packet::Medium))
+FLC_BUFFER(network.media, Mask, "network", B ? N/group : 0, sizeof(packet::Medium))
 FLC_BUFFER(network.offers, Mask, "network", rows, sizeof(packet::Frame))
 FLC_BUFFER(network.senders, Mask, "network", B, sizeof(packet::Sender))
 FLC_BUFFER(network.results, Mask, "network", rows, sizeof(packet::Reception))
 FLC_BUFFER(network.sources, Index, "network", B, F)
 FLC_BUFFER(network.inbox, std::uint64_t, "network", rows, F, 6)
 FLC_BUFFER(network.offsets, Index, "network", segments)
+FLC_BUFFER(network.hidden_sources, Index, "network", H ? B : 0, F, H)
+FLC_BUFFER(network.hidden_end, std::uint64_t, "network", H ? B : 0, F)
 FLC_BUFFER(network.reset_ns, std::uint64_t, "network", B)
 
 FLC_BUFFER(network.range_edges, Scalar, "network", bins ? bins-1 : 0)

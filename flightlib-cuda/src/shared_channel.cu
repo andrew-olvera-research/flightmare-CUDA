@@ -91,6 +91,10 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
   }
   for (size_t j=threadIdx.x; j<n; j+=blockDim.x) {
     auto& s = senders[base+j];
+    if(s.phase==Phase::OnAir){
+      results[base+j].air_end=s.finish;
+      results[base+j].air_start=s.finish-p.preamble_ns-Time(s.frame.bytes)*p.ns_per_byte;
+    }
     if (s.phase == Phase::OnAir && s.finish <= end) {
       auto& r = results[base+j];
       r.completed = true;
@@ -98,6 +102,7 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
       r.id = s.frame.id;
       r.arrival = s.finish;
       r.submitted = s.submitted;
+      r.fixture_label = s.frame.fixture_label;
       r.attempt_id = s.frame.attempt_id;
       r.handle = s.frame.handle;
       r.expired = s.frame.expiry_ns && s.finish>s.frame.expiry_ns;

@@ -1,0 +1,397 @@
+{
+  "schema_version": 1,
+  "replay_sha256": "3202039cbddd7c441218973b3192d9a5ccb65d5e17aa16f33d06e3945277506c",
+  "sources": [
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/11022019/OBU-00-11022019-Morning/log_HP.txt",
+      "sha256": "55fd6af13e1e687e5d1df5e7df4cb49e4b1490722f5a12207b7cdb17aba4bfc8",
+      "audit": {}
+    },
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/11022019/OBU-01-11022019-Morning/log_HP.txt",
+      "sha256": "5fa0373c3fd68d4327dd2f878eb30d384522f4fc34cf43f9150371c32c365706",
+      "audit": {
+        "other_day": 9410
+      }
+    },
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/11022019/RSUs-11022019/log_HP_HW.txt",
+      "byte_range": [
+        125829120,
+        142606335
+      ],
+      "sha256": "915ab3c64a469350436665c714afafbdb3cee71f8ba8060d33eec65ad1068ce1"
+    },
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/13022019/OBU-00-13022019-Morning/log_HP.txt",
+      "sha256": "e58d6601da313ea06d3c827cc83d11a2227aee7a391cb652a5d991b2fc022331",
+      "audit": {}
+    },
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/13022019/OBU-01-13022019-Morning/log_HP.txt",
+      "sha256": "00e79ce893ae5c472f607dd4792ed4839dce64ae0d35f970999cadbb6511dd1b",
+      "audit": {}
+    },
+    {
+      "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/13022019/RSUs-13022019/log_HP_HW.txt",
+      "byte_range": [
+        125829120,
+        142606335
+      ],
+      "sha256": "dbc6b6c2f5c478a6948b01889a19b29acdbbcd9572e7101ae1d44ee9db92640c"
+    }
+  ],
+  "distance_edges_m": [
+    25,
+    50,
+    100,
+    200,
+    400
+  ],
+  "sessions": [
+    [
+      {
+        "offered_received": [
+          [
+            13154,
+            12914
+          ],
+          [
+            9085,
+            8018
+          ],
+          [
+            27758,
+            24572
+          ],
+          [
+            28911,
+            17760
+          ],
+          [
+            113222,
+            19177
+          ],
+          [
+            340488,
+            449
+          ]
+        ],
+        "excluded": {
+          "unpaired_position": 1455,
+          "outside_overlap": 30128
+        },
+        "eligible_minutes": 137,
+        "minute_bootstrap_95": [
+          [
+            0.9555061179087876,
+            0.9883881035432348
+          ],
+          [
+            0.702958260164798,
+            0.9559816953584659
+          ],
+          [
+            0.8194151486097795,
+            0.9335408637217116
+          ],
+          [
+            0.44303415630220905,
+            0.7918918918918919
+          ],
+          [
+            0.10159262025393109,
+            0.23909927053599747
+          ],
+          [
+            3.928394434976007e-05,
+            0.003911826851693221
+          ]
+        ],
+        "loss_runs": 7563,
+        "max_loss_run": 37084
+      },
+      {
+        "offered_received": [
+          [
+            12661,
+            11960
+          ],
+          [
+            9311,
+            8134
+          ],
+          [
+            29882,
+            25452
+          ],
+          [
+            31427,
+            17403
+          ],
+          [
+            112537,
+            11564
+          ],
+          [
+            358145,
+            168
+          ]
+        ],
+        "excluded": {
+          "outside_overlap": 4133,
+          "unpaired_position": 1303
+        },
+        "eligible_minutes": 137,
+        "minute_bootstrap_95": [
+          [
+            0.8884998157021747,
+            0.9659405940594059
+          ],
+          [
+            0.6845490625427673,
+            0.9504725897920605
+          ],
+          [
+            0.7755820503191889,
+            0.9121423388750434
+          ],
+          [
+            0.39904070521130414,
+            0.7273111612175873
+          ],
+          [
+            0.06031728100187205,
+            0.1487123832320753
+          ],
+          [
+            0.0,
+            0.0014655363066715813
+          ]
+        ],
+        "loss_runs": 8371,
+        "max_loss_run": 36369
+      }
+    ],
+    [
+      {
+        "offered_received": [
+          [
+            14693,
+            14402
+          ],
+          [
+            13458,
+            13274
+          ],
+          [
+            15151,
+            13781
+          ],
+          [
+            29703,
+            15259
+          ],
+          [
+            100994,
+            4561
+          ],
+          [
+            502130,
+            0
+          ]
+        ],
+        "excluded": {
+          "unpaired_position": 1160
+        },
+        "eligible_minutes": 165,
+        "minute_bootstrap_95": [
+          [
+            0.9642878051636321,
+            0.9932774746687452
+          ],
+          [
+            0.9715636740510429,
+            0.9938098240385167
+          ],
+          [
+            0.8082726326742976,
+            0.9702645126930588
+          ],
+          [
+            0.39233188272291225,
+            0.6300127059138227
+          ],
+          [
+            0.019485999944352215,
+            0.07983253933881912
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "loss_runs": 4201,
+        "max_loss_run": 53782
+      },
+      {
+        "offered_received": [
+          [
+            12031,
+            11224
+          ],
+          [
+            13183,
+            12414
+          ],
+          [
+            17594,
+            14760
+          ],
+          [
+            33755,
+            14729
+          ],
+          [
+            104493,
+            3206
+          ],
+          [
+            495225,
+            0
+          ]
+        ],
+        "excluded": {
+          "outside_overlap": 41857,
+          "unpaired_position": 3290
+        },
+        "eligible_minutes": 165,
+        "minute_bootstrap_95": [
+          [
+            0.901383894518906,
+            0.9507750314201927
+          ],
+          [
+            0.9316605467156263,
+            0.9472466711803205
+          ],
+          [
+            0.7376526334973574,
+            0.9070229283264127
+          ],
+          [
+            0.3332112413425679,
+            0.5382519451424419
+          ],
+          [
+            0.011798506935449685,
+            0.05500535705967299
+          ],
+          [
+            0.0,
+            0.0
+          ]
+        ],
+        "loss_runs": 6823,
+        "max_loss_run": 53178
+      }
+    ]
+  ],
+  "scores": [
+    {
+      "direction": 0,
+      "band": 0,
+      "absolute_error": 0.0015599488475608325,
+      "passed": true
+    },
+    {
+      "direction": 0,
+      "band": 1,
+      "absolute_error": 0.10377417486621165,
+      "passed": false
+    },
+    {
+      "direction": 0,
+      "band": 2,
+      "absolute_error": 0.024354647353348247,
+      "passed": true
+    },
+    {
+      "direction": 0,
+      "band": 3,
+      "absolute_error": 0.10057990277522155,
+      "passed": false
+    },
+    {
+      "direction": 0,
+      "band": 4,
+      "absolute_error": 0.12421411108575722,
+      "passed": false
+    },
+    {
+      "direction": 0,
+      "band": 5,
+      "absolute_error": 0.0013186955193721951,
+      "passed": true
+    },
+    {
+      "direction": 1,
+      "band": 0,
+      "absolute_error": 0.011709843822816368,
+      "passed": true
+    },
+    {
+      "direction": 1,
+      "band": 1,
+      "absolute_error": 0.06807692182042901,
+      "passed": true
+    },
+    {
+      "direction": 1,
+      "band": 2,
+      "absolute_error": 0.01282785762683536,
+      "passed": true
+    },
+    {
+      "direction": 1,
+      "band": 3,
+      "absolute_error": 0.11740933581199192,
+      "passed": false
+    },
+    {
+      "direction": 1,
+      "band": 4,
+      "absolute_error": 0.07207583431568595,
+      "passed": true
+    },
+    {
+      "direction": 1,
+      "band": 5,
+      "absolute_error": 0.0004690837509947088,
+      "passed": true
+    }
+  ],
+  "broadcast": [
+    {
+      "day": "11022019",
+      "receiver_mask_counts": [
+        47048,
+        7110,
+        10051,
+        2265
+      ],
+      "denominator": 66474
+    },
+    {
+      "day": "13022019",
+      "receiver_mask_counts": [
+        54178,
+        7114,
+        8810,
+        1850
+      ],
+      "denominator": 71952
+    }
+  ],
+  "qualified": false
+}

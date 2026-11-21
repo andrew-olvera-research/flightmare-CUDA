@@ -190,6 +190,9 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset baroPackets=capacity(config.barometer,false),baroQueue=capacity(config.barometer,true);
   const Offset odomPackets=capacity(config.odometry,false),odomQueue=capacity(config.odometry,true);
   const Offset F = config.network_fanin, B = F ? N : 0;
+  const Offset group=config.carrier_group_size?config.carrier_group_size:A;
+  const Offset H=config.hidden_per_edge;
+  if(B && (A%group || H>A))throw std::invalid_argument("invalid carrier group or hidden source capacity");
   const Offset segments=B?config.network_offsets.size():0;
   if(B && (!segments || segments>=kInvalidIndex || config.network_offsets.front()!=0 ||
       config.network_offsets.back()>=config.network_tick_ns ||
@@ -239,6 +242,7 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.topology.batch = makeBatchShape(config.environments, config.slots);
   s->views.swarm.radius=config.agent_collision_radius;
   s->views.swarm.terminate=config.terminate_on_agent_collision;
+  s->views.network.group_size=config.carrier_group_size?config.carrier_group_size:config.slots;
   s->views.network.profile=config.shared_profile;
   s->views.network.tick_ns=config.network_tick_ns;
   s->views.sensor_step_ns=config.sensor_step_ns;
@@ -259,6 +263,10 @@ Simulation::Simulation(const RuntimeConfig& config) {
   if(s->views.network.offsets.data)
     check(cudaMemcpyAsync(s->views.network.offsets.data,config.network_offsets.data(),
         config.network_offsets.size()*sizeof(Index),cudaMemcpyHostToDevice,s->stream),"upload packet offsets");
+  if(s->views.network.hidden_sources.data)
+    check(cudaMemsetAsync(s->views.network.hidden_sources.data,0xff,
+        s->views.network.sources.shape[0]*s->views.network.sources.shape[1]*config.hidden_per_edge*sizeof(Index),
+        s->stream),"initialize hidden sources");
   if(s->views.network.sources.data)
     check(cudaMemsetAsync(s->views.network.sources.data,0xff,
           s->views.network.sources.shape[0]*s->views.network.sources.shape[1]*sizeof(Index), s->stream),"initialize network subscriptions");

@@ -62,6 +62,7 @@ struct RuntimeConfig {
   packet::SharedProfile shared_profile{};
   Index network_tick_ns{}, network_fanin{};
   std::vector<Index> network_offsets{0};
+  Index carrier_group_size{}, hidden_per_edge{};
   bool network_sample_loss{};
   std::vector<Scalar> network_range_edges;
 };
@@ -80,6 +81,9 @@ struct NetworkBuffers {
   TensorView<std::uint64_t,3> inbox;
   Vector<std::uint64_t> reset_ns;
   Vector<Index> offsets;
+  TensorView<Index,3> hidden_sources;
+  Matrix<std::uint64_t> hidden_end;
+  Index group_size{};
   Vector<Scalar> range_edges;
   TensorView<Scalar,3> loss_after_rx, loss_after_miss;
   Matrix<std::uint64_t> history;

@@ -22,6 +22,33 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
+  if(argc==2 && std::string(argv[1])=="--broadcast-replay"){
+    std::vector<unsigned> masks;
+    unsigned long long total=0;
+    auto replay=[&]{
+      auto domains=static_cast<unsigned>(masks.size());
+      SharedChannel ch(domains,3,100,{1,1,1,0,0,22});
+      std::vector<Frame> offers(size_t(domains)*3);
+      for(unsigned e=0;e<domains;++e)
+        offers[3*e]={total+e,0,((~masks[e])&3u)<<1,0,32,true};
+      ch.offers.upload(offers);ch.run(nullptr);
+      auto results=ch.results.read();
+      for(unsigned e=0;e<domains;++e){
+        auto r=results[3*e];
+        require(r.completed && r.id==total+e && r.arrival==32);
+        for(unsigned rx=1;rx<=2;++rx)
+          require(receivedBy(r,0,rx,3)==bool(masks[e] & (1u<<(rx-1))));
+      }
+      total+=domains;masks.clear();
+    };
+    char c;
+    while(std::cin.get(c)){
+      require(c>='0' && c<='3');masks.push_back(c-'0');
+      if(masks.size()==4096)replay();
+    }
+    require(std::cin.eof());if(!masks.empty())replay();
+    require(total>0);std::cout<<total<<"\n";return 0;
+  }
   require(argc == 1);
   {
     SharedProfile p{1,1,2,0,0,22};

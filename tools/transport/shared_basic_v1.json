@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "name": "fixed-window-80211g-basic-access",
+  "settings": {
+    "slot_ns": 9000,
+    "window_slots": 16,
+    "ns_per_byte": 148,
+    "preamble_ns": 32000,
+    "recovery_ns": 72000
+  },
+  "measurement": {
+    "source": "https://pubs.cs.uct.ac.za/id/eprint/534/1/Final_Version.pdf",
+    "sha256": "e9fece0b8a6877c706fd5d92b53ed35105f94aebeff8a526fa469b2f258ce124",
+    "reference": "Figure 5, upper panel, digitized mean aggregate throughput",
+    "clock": "aggregate measurement; no per-packet alignment",
+    "validity": {
+      "contenders": [1, 8],
+      "packet_bytes": 1000,
+      "traffic": "saturated unicast to a common sink",
+      "metric": "normalized aggregate goodput",
+      "relative_error_limit": 0.1
+    },
+    "outside_validity": "Exploratory simulation; no measured accuracy claim."
+  }
+}

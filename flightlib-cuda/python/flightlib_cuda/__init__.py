@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from enum import IntEnum
+import json
 import torch
 from . import _native
 from .sensors import BarometerConfig, ImuConfig, OdometryConfig, SensorPackets, settings as _sensor_settings
@@ -193,6 +194,8 @@ class Core(_Resident):
 
 @dataclass(frozen=True)
 class NetworkConfig:
+    carrier_group_size: int = 0
+    hidden_per_edge: int = 0
     range_edges_m: tuple | None = None
     offsets_ns: tuple = (0,)
     fanin: int = 1
@@ -202,6 +205,21 @@ class NetworkConfig:
     preamble_ns: int = 32000
     recovery_ns: int = 72000
     seed: int = 22
+
+    @classmethod
+    def from_profile(cls, path, **workspace):
+        """Load versioned MAC timing. Workspace controls capacity, layout and seed."""
+        with open(path, encoding="utf-8") as stream:
+            profile = json.load(stream)
+        settings = profile["settings"]
+        required = {"slot_ns", "window_slots", "ns_per_byte", "preamble_ns", "recovery_ns"}
+        if profile["schema_version"] != 1 or set(settings) != required:
+            raise ValueError("unsupported network profile")
+        if any(type(x) is not int or not 0 <= x < 2**32 for x in settings.values()):
+            raise ValueError("profile parameters must be uint32")
+        if not all(settings[k] for k in ("slot_ns", "window_slots", "ns_per_byte")):
+            raise ValueError("slot, contention window and byte time must be positive")
+        return cls(**settings, **workspace)
 
 
 class Network:
@@ -213,9 +231,9 @@ class Network:
             return torch.utils.dlpack.from_dlpack(native.tensor("network."+name))
         raw = borrow("offers")
         for name, offset, dtype in zip(
-            ("packet_id", "receivers", "erased", "receiver_base", "size", "broadcast", "attempt_id", "handle", "expiry_ns"),
+            ("packet_id", "receivers", "erased", "receiver_base", "size", "broadcast", "attempt_id", "handle", "expiry_ns", "fixture_label"),
             _native.frame_offsets,
-            (torch.int64, torch.int64, torch.int64, torch.uint32, torch.uint32, torch.uint8, torch.int64, torch.int64, torch.int64)
+            (torch.int64, torch.int64, torch.int64, torch.uint32, torch.uint32, torch.uint8, torch.int64, torch.int64, torch.int64, torch.uint32)
         ):
             width = dtype.itemsize
             setattr(self, name, raw[:, offset:offset+width].view(dtype).view(shape))
@@ -223,11 +241,13 @@ class Network:
         self.evaluator = {
             key: results[:, offset:offset+dtype.itemsize].view(dtype).view(shape)
             for key, offset, dtype in zip(
-                ("admission","completed","collided","expired","completed_handle"),
+                ("admission","completed","collided","expired","completed_handle","fixture_label"),
                 _native.completion_offsets,
-                (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64))
+                (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64, torch.uint32))
         }
         self.sources = borrow("sources").view(environments, slots, fanin)
+        if config.hidden_per_edge:
+            self.hidden_sources = borrow("hidden_sources").view(environments, slots, fanin, config.hidden_per_edge)
         if config.range_edges_m is not None:
             bands = len(config.range_edges_m)+1
             self.loss_after_rx = borrow("loss_after_rx").view(environments, slots, fanin, bands)

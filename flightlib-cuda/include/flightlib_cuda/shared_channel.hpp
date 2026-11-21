@@ -5,6 +5,7 @@ namespace flightlib_cuda::packet {
 // A medium is a fully connected contention domain. One row per sender.
 // receivers and erased are masks relative to receiver_base within the medium.
 struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; std::uint8_t all_peers = 0;
+  unsigned fixture_label{}; // evaluator only
   Time attempt_id{}, handle{}, expiry_ns{}; // absolute simulation ns; zero disables expiry
 };
 struct SharedProfile {
@@ -28,6 +29,8 @@ struct Reception {
   Admission admission;
   Time submitted, attempt_id, handle;
   bool expired;
+  unsigned fixture_label;
+  Time air_start, air_end; // Occupancy visible to the evaluator on every overlapping interval.
 };
 // Expand a completion on demand. Full-domain broadcast excludes its source.
 __host__ __device__ inline bool receivedBy(const Reception& r, unsigned sender,
