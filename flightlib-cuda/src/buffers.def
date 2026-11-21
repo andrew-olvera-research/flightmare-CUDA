@@ -95,3 +95,8 @@ FLC_BUFFER(network.sources, Index, "network", B, F)
 FLC_BUFFER(network.inbox, std::uint64_t, "network", rows, F, 6)
 FLC_BUFFER(network.offsets, Index, "network", segments)
 FLC_BUFFER(network.reset_ns, std::uint64_t, "network", B)
+
+FLC_BUFFER(network.range_edges, Scalar, "network", bins ? bins-1 : 0)
+FLC_BUFFER(network.loss_after_rx, Scalar, "network", bins ? B : 0, F, bins)
+FLC_BUFFER(network.loss_after_miss, Scalar, "network", bins ? B : 0, F, bins)
+FLC_BUFFER(network.history, std::uint64_t, "network", bins ? B : 0, F)

@@ -193,6 +193,7 @@ class Core(_Resident):
 
 @dataclass(frozen=True)
 class NetworkConfig:
+    range_edges_m: tuple | None = None
     offsets_ns: tuple = (0,)
     fanin: int = 1
     slot_ns: int = 9000
@@ -227,6 +228,10 @@ class Network:
                 (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64))
         }
         self.sources = borrow("sources").view(environments, slots, fanin)
+        if config.range_edges_m is not None:
+            bands = len(config.range_edges_m)+1
+            self.loss_after_rx = borrow("loss_after_rx").view(environments, slots, fanin, bands)
+            self.loss_after_miss = borrow("loss_after_miss").view_as(self.loss_after_rx)
         self.inbox = borrow("inbox").view(*shape, fanin, 6)
 
 

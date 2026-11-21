@@ -78,6 +78,7 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
   if(v.network.offers.data){
     const auto& net=v.network;
     auto domain=n/v.topology.batch.slots_per_environment;
+    if(net.history.data)for(Offset k=0;k<net.sources.shape[1];++k)net.history(n,k)=0;
     net.reset_ns(n)=reinterpret_cast<packet::Medium*>(net.media.data)[domain].now;
     for(Offset row=n;row<net.offers.shape[0];row+=v.topology.batch.lanes){
       reinterpret_cast<packet::Frame*>(net.offers.data)[row]={};
@@ -275,20 +276,38 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
   if(scene.nodes || v.swarm.radius)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
   else taskKernel<InlineReset,TerminalReward,false><<<blocks,threads,0,stream>>>(v,in,source,scene);
 }
-__global__ void collectPackets(NetworkBuffers net, const Mask* active, Index slots){
+__global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Scalar> positions, Index slots){
   Offset edge=Offset(blockIdx.x)*blockDim.x+threadIdx.x;
-  Offset fan=net.sources.shape[1], row=edge/fan, k=edge%fan;
-  if(row>=net.inbox.shape[0])return;
-  Offset n=row%net.sources.shape[0];
+  Offset fan=net.sources.shape[1], n=edge/fan, k=edge%fan;
+  if(n>=net.sources.shape[0])return;
   Index source=net.sources(n,k), receiver=n%slots;
-  auto* fields=net.inbox.data+edge*6;
-  for(unsigned i=0;i<6;++i)fields[i]=0;
-  if(source>=slots || !active[n])return;
-  Offset lane=row-receiver+source;
-  auto r=reinterpret_cast<const packet::Reception*>(net.results.data)[lane];
-  auto submitted=r.submitted;
-  if(submitted>=net.reset_ns(n) && packet::receivedBy(r,source,receiver,slots)){
-    fields[0]=1;fields[1]=r.id;fields[2]=submitted;fields[3]=r.arrival;fields[4]=r.attempt_id;fields[5]=r.handle;
+  Offset lanes=net.sources.shape[0], lane=n-receiver+source;
+  Offset band=0;
+  if(net.history.data && source<slots){
+    float squared=0;
+    for(unsigned axis=0;axis<3;++axis){
+      float d=positions(axis,n)-positions(axis,lane);squared+=d*d;
+    }
+    while(band<net.range_edges.shape[0] && squared>=net.range_edges(band)*net.range_edges(band))++band;
+  }
+  for(Offset segment=0;segment<net.offsets.shape[0];++segment){
+    auto* fields=net.inbox.data+(segment*lanes*fan+edge)*6;
+    for(unsigned i=0;i<6;++i)fields[i]=0;
+    if(source>=slots || !active[n])continue;
+    auto r=reinterpret_cast<const packet::Reception*>(net.results.data)[segment*lanes+lane];
+    if(r.submitted<net.reset_ns(n) || !packet::receivedBy(r,source,receiver,slots))continue;
+    if(net.history.data){
+      auto last=net.history(n,k);
+      bool missed=last==2ULL*source+2;
+      float probability=(missed?net.loss_after_miss:net.loss_after_rx)(n,k,band);
+      auto key=mix(net.profile.seed ^ mix(lane) ^ mix(n+0x9e3779b97f4a7c15ULL));
+      auto bits=mix(key ^ mix(r.attempt_id) ^ mix(r.id+1) ^ mix(r.submitted));
+      bool drop=!(probability>=0 && probability<=1) || float(bits>>40)*(1.f/16777216.f)<probability;
+      net.history(n,k)=2ULL*source+1+drop;
+      if(drop)continue;
+    }
+    fields[0]=1;fields[1]=r.id;fields[2]=r.submitted;fields[3]=r.arrival;
+    fields[4]=r.attempt_id;fields[5]=r.handle;
   }
 }
 __global__ void resetQuietMedium(RuntimeViews v){
@@ -337,8 +356,8 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
         reinterpret_cast<packet::Medium*>(net.media.data),reinterpret_cast<packet::Frame*>(net.offers.data),
         reinterpret_cast<packet::Sender*>(net.senders.data),reinterpret_cast<packet::Reception*>(net.results.data),
         stream,v.topology.active.data,net.offsets.shape[0],net.offsets.data);
-    Offset edges=net.inbox.shape[0]*net.sources.shape[1];
-    collectPackets<<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,batch.slots_per_environment);
+    Offset edges=net.sources.shape[0]*net.sources.shape[1];
+    collectPackets<<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,v.state.x,batch.slots_per_environment);
   }
   if(v.sensor_truth.samples.data)detail::launchSensors(v,stream,first);
   if(first||ctx.execution==TaskExecution::FusedReset)

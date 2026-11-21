@@ -1,4 +1,5 @@
 #include "flightlib_cuda/shared_channel.hpp"
+#include <algorithm>
 #include <stdexcept>
 
 namespace flightlib_cuda::packet {
@@ -10,7 +11,7 @@ __device__ unsigned backoff(Time row, Time sequence, SharedProfile profile) {
   return (x ^ (x >> 31)) % profile.window_slots;
 }
 
-__device__ void interval(unsigned n, unsigned dt, SharedProfile p, Medium* media,
+__device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media,
                      const Frame* offers, Sender* senders, Reception* results, const std::uint8_t* active) {
   __shared__ unsigned minimum, contenders, longest;
   __shared__ Medium m;
@@ -22,7 +23,7 @@ __device__ void interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
   if (~Time{0}-m.now < reserve || ~Time{0}-m.now-reserve < dt + Time(p.slot_ns)) {
     for (size_t j=threadIdx.x; j<n; j+=blockDim.x)
       results[base+j] = {0,0,0,0,false,false,false,Admission::ClockOverflow};
-    return;
+    return false;
   }
   const Time end = m.now + dt;
   for (size_t j=threadIdx.x; j<n; j+=blockDim.x) {
@@ -119,18 +120,29 @@ __device__ void interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
     }
   }
   if (!threadIdx.x) { m.now = end; media[blockIdx.x] = m; }
+  return true;
 }
 
 __global__ void step(unsigned n,unsigned dt,SharedProfile p,Medium* m,const Frame* f,
                      Sender* s,Reception* r,const std::uint8_t* active,
-                     unsigned segments,const unsigned* offsets){
+                     unsigned segments,const unsigned* offsets,TimelineCursor* cursors,unsigned limit){
   size_t lanes=size_t(gridDim.x)*n;
-  for(unsigned i=0;i<segments;++i){
+  __shared__ unsigned first;
+  if(!threadIdx.x)first=cursors?cursors[blockIdx.x].next:0;
+  __syncthreads();
+  unsigned rows=first<segments?min(segments-first,limit):0;
+  unsigned processed=0, written=0;
+  for(unsigned row=0;row<rows;++row){
+    unsigned i=first+row;
     unsigned start=i?offsets[i]:0;
     unsigned end=i+1<segments?offsets[i+1]:dt;
-    interval(n,end-start,p,m,f+i*lanes,s,r+i*lanes,active);
+    bool ok=interval(n,end-start,p,m,f+i*lanes,s,r+row*lanes,active);
+    ++written;
+    if(!ok)break;
+    ++processed;
     __syncthreads();
   }
+  if(cursors && !threadIdx.x)cursors[blockIdx.x]={first+processed,written,m[blockIdx.x].now};
 }
 }
 void advanceShared(unsigned domains, unsigned stations, unsigned dt, SharedProfile p,
@@ -140,10 +152,15 @@ void advanceShared(unsigned domains, unsigned stations, unsigned dt, SharedProfi
 void advanceSharedSchedule(unsigned domains,unsigned stations,unsigned dt,SharedProfile p,
     Medium* m,const Frame* f,Sender* s,Reception* r,cudaStream_t stream,const std::uint8_t* active,
     unsigned segments,const unsigned* offsets){
-  if (!segments || (segments>1 && !offsets) || !domains || domains > INT32_MAX || !stations || !dt || !p.window_slots ||
+  continueSharedSchedule(domains,stations,dt,p,m,f,s,r,stream,active,segments,offsets,nullptr,segments,segments);
+}
+void continueSharedSchedule(unsigned domains,unsigned stations,unsigned dt,SharedProfile p,
+    Medium* m,const Frame* f,Sender* s,Reception* r,cudaStream_t stream,const std::uint8_t* active,
+    unsigned segments,const unsigned* offsets,TimelineCursor* cursors,unsigned budget,unsigned output_rows){
+  if ((!cursors && (output_rows<segments || budget<segments)) || !segments || (segments>1 && !offsets) || !domains || domains > INT32_MAX || !stations || !dt || !p.window_slots ||
       !p.slot_ns || !p.ns_per_byte || !m || !f || !s || !r)
     throw std::invalid_argument("invalid shared channel configuration");
-  step<<<domains,128,0,stream>>>(stations,dt,p,m,f,s,r,active,segments,offsets);
+  step<<<domains,128,0,stream>>>(stations,dt,p,m,f,s,r,active,segments,offsets,cursors,std::min(budget,output_rows));
   auto status = cudaGetLastError();
   if (status != cudaSuccess) throw std::runtime_error(cudaGetErrorString(status));
 }

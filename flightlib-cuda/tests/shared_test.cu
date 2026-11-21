@@ -23,6 +23,30 @@ int main(int argc, char** argv) {
     return 0;
   }
   require(argc == 1);
+  {
+    SharedProfile p{1,1,2,0,0,22};
+    SharedChannel single(1,1,100,p), resumed(1,1,100,p);
+    Buffer<unsigned> offsets(3); offsets.upload({0,20,50});
+    Buffer<Frame> offers(3); offers.upload({{4,1,0,0,5},{5,1,0,0,10},{6,1,0,0,20}});
+    Buffer<Reception> complete(3);
+    Buffer<TimelineCursor> cursor(1);
+    advanceSharedSchedule(1,1,100,p,single.media.data,offers.data,single.senders.data,
+                          complete.data,nullptr,nullptr,3,offsets.data);
+    auto expected=complete.read();
+    auto resume=[&](unsigned budget,unsigned rows){
+      continueSharedSchedule(1,1,100,p,resumed.media.data,offers.data,resumed.senders.data,
+            resumed.results.data,nullptr,nullptr,3,offsets.data,cursor.data,budget,rows);
+      return cursor.read()[0];
+    };
+    require(resume(3,0).next==0 && resume(0,1).through_ns==0);
+    for(unsigned i=0;i<3;++i){
+      auto c=resume(3,1);
+      auto actual=resumed.results.read()[0];
+      require(c.next==i+1 && c.written==1 && actual.completed &&
+              actual.id==expected[i].id && actual.arrival==expected[i].arrival);
+    }
+    require(resume(1,1).written==0 && resumed.media.read()[0].now==100);
+  }
   SharedChannel ch(2,2,5,{1,1,1,0,2,22});
   // Two simultaneous senders collide in medium 0. In medium 1 a broadcast
   // takes ten ns and delivers to two of three receivers.

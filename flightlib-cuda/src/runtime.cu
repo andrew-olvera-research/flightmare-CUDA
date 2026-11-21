@@ -197,6 +197,12 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
                          std::greater_equal<Index>())!=config.network_offsets.end()))
     throw std::invalid_argument("invalid packet submission offsets");
   const Offset rows=multiply(B,segments);
+  const Offset bins=B && config.network_sample_loss ? config.network_range_edges.size()+1:0;
+  Scalar previous=0;
+  for(auto distance:config.network_range_edges){
+    if(!std::isfinite(distance) || distance<=previous)throw std::invalid_argument("invalid distance bands");
+    previous=distance;
+  }
   if(F && (multiply(rows,F)>Offset(INT32_MAX)*128 || F>A || !config.network_tick_ns || !config.shared_profile.slot_ns ||
            !config.shared_profile.window_slots || !config.shared_profile.ns_per_byte))
     throw std::invalid_argument("invalid shared channel capacity, clock or profile");
@@ -247,6 +253,9 @@ Simulation::Simulation(const RuntimeConfig& config) {
   check(cudaMemsetAsync(s->arena, 0, s->plan.arena_bytes, s->stream), "initialize arena");
   const Offset count = std::max({Offset{s->views.topology.batch.lanes},
                                  Offset{config.instances}, Offset{config.rays}});
+  if(s->views.network.range_edges.data)
+    check(cudaMemcpyAsync(s->views.network.range_edges.data,config.network_range_edges.data(),
+        config.network_range_edges.size()*sizeof(Scalar),cudaMemcpyHostToDevice,s->stream),"upload range bands");
   if(s->views.network.offsets.data)
     check(cudaMemcpyAsync(s->views.network.offsets.data,config.network_offsets.data(),
         config.network_offsets.size()*sizeof(Index),cudaMemcpyHostToDevice,s->stream),"upload packet offsets");

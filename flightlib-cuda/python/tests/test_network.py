@@ -81,3 +81,20 @@ def test_timestamped_offers_with_expiry_and_opaque_handle():
     assert net.evaluator["expired"][:,0,0].tolist() == [0,1,0]
     rows = net.inbox[:,0,1,0].tolist()
     assert rows == [[1,10,0,46800,1,42], [0]*6, [1,10,2000000,2046800,3,42]]
+
+def test_directional_distance_and_loss_memory():
+    env = Environment(1,3,network=NetworkConfig(window_slots=1, range_edges_m=(5.0,)),
+                      auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset_state[0,2] = 10
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.broadcast[0,0] = 1
+    net.size[0,0] = 100
+    net.loss_after_rx[:,:,:,1].fill_(1)
+    net.loss_after_miss.zero_()
+    env.capture(random=False)
+    for far in (0,1,0,1):
+        env.step(graph=True,random=False)
+        assert net.inbox[0,:,0,0].tolist() == [0,1,far]

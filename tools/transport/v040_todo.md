@@ -22,3 +22,9 @@ Resident shared channel, sparse receiver inbox and full/partial reset tests are 
 ### Batched timeline checkpoint
 
 Added fixed, arbitrary nanosecond submission offsets within a plant tick. Each offset has one offer slot per sender, a separate admission/completion result, and a reserved receiver event row per subscribed edge. The CUDA block advances the complete schedule in one launch. Frames carry logical and attempt IDs, absolute expiry and opaque payload handle. Receiver observations expose only live deliveries. The evaluator returns completion handles even for in-flight expiry. The caller retains payload storage through completion or episode cancellation. Dynamic output limits, explicit continuation and the independent shared-timeline CPU oracle remain open.
+
+### Continuation, receiver geometry and scaling checkpoint
+
+The native schedule can resume from a device cursor with a segment budget and reusable output slab. Tests compare limited and full processing and verify zero-work and already-completed calls. The environment path reserves enough rows for its entire configured tick. A CPU slot oracle independently checks the public GPU path. Per-edge distance bands and two conditional loss tables now sample receiver outcomes on the GPU. Positions are sampled at the plant tick endpoint. Separate backoff/interference domains, hidden senders, measured calibration and long outages are still open.
+
+On the RTX 5070 Ti a 1 × 1,000 case generated 999 useful receiver observations per broadcast. Across three rounds the median captured plant step took 16.48 µs, shared channel with receiver materialization 32.77 µs, and shared plus sampled receiver logic 34.82 µs (zero loss probabilities). 100 × 10 took 16.45, 22.53 and 24.58 µs respectively. These are one-source-per-medium tests. Reproduce with bench_resident.py against the built Python package. Full Python suite: 80 passed, one skip; native: five passed.

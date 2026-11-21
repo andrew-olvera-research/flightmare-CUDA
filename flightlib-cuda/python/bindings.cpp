@@ -137,6 +137,10 @@ struct NativeEnvironment {
       if(period<1 || period>UINT32_MAX)throw std::invalid_argument("unsupported network tick");
       c.network_tick_ns=period;
       c.network_fanin=network["fanin"].cast<Index>();
+      if(!network["range_edges_m"].is_none()){
+        c.network_sample_loss=true;
+        c.network_range_edges=network["range_edges_m"].cast<std::vector<Scalar>>();
+      }
       c.network_offsets=network["offsets_ns"].cast<std::vector<Index>>();
       if(!c.network_fanin)throw std::invalid_argument("network requires positive receiver fanin");
       c.shared_profile={network["slot_ns"].cast<Index>(),network["window_slots"].cast<Index>(),

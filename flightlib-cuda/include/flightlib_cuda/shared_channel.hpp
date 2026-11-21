@@ -50,4 +50,11 @@ void advanceShared(unsigned domains, unsigned stations, unsigned dt_ns, SharedPr
 void advanceSharedSchedule(unsigned domains,unsigned stations,unsigned dt,SharedProfile,
     Medium*,const Frame*,Sender*,Reception*,cudaStream_t,const std::uint8_t* active,
     unsigned segments,const unsigned* offsets);
+// Zero one cursor per medium at the beginning of a schedule. One output row
+// here contains all senders for all domains. Drain rows before reusing output.
+// Zero budget or zero output capacity leaves the medium and sender state intact.
+struct TimelineCursor { unsigned next, written; Time through_ns; };
+void continueSharedSchedule(unsigned domains,unsigned stations,unsigned dt,SharedProfile,
+    Medium*,const Frame*,Sender*,Reception*,cudaStream_t,const std::uint8_t* active,
+    unsigned segments,const unsigned* offsets,TimelineCursor*,unsigned budget,unsigned output_rows);
 } // namespace flightlib_cuda::packet

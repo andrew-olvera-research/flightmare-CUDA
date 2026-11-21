@@ -62,6 +62,8 @@ struct RuntimeConfig {
   packet::SharedProfile shared_profile{};
   Index network_tick_ns{}, network_fanin{};
   std::vector<Index> network_offsets{0};
+  bool network_sample_loss{};
+  std::vector<Scalar> network_range_edges;
 };
 
 struct SwarmCollision {
@@ -78,6 +80,9 @@ struct NetworkBuffers {
   TensorView<std::uint64_t,3> inbox;
   Vector<std::uint64_t> reset_ns;
   Vector<Index> offsets;
+  Vector<Scalar> range_edges;
+  TensorView<Scalar,3> loss_after_rx, loss_after_miss;
+  Matrix<std::uint64_t> history;
   packet::SharedProfile profile{};
   Index tick_ns{};
 };
