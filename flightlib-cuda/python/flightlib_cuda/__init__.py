@@ -8,7 +8,7 @@ from . import _native
 from .sensors import BarometerConfig, ImuConfig, OdometryConfig, SensorPackets, settings as _sensor_settings
 from .transport import Backpressure, Subscription, Transport, step_nanoseconds
 
-__version__ = '0.3.0'
+__version__ = '0.4.1'
 ModelConfig = _native.ModelConfig
 TaskConfig = _native.TaskConfig
 load_model = _native.load_model

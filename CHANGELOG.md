@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 - Resident packet network
+
+- Add shared airtime, broadcast, bounded sender service, sparse receiver subscriptions and optional persistent packet loss to the batched GPU step.
+- Qualify declared packet profiles against Wi-SUN captures and ns-3. See [measured limits and application freshness](tools/transport/session_service.md) before selecting a downstream profile.
+
 ## 0.3.0 — simulator-focused layout
 
 - Newton's `flightlib_cuda.camera.TiledCamera` is the supported camera backend. Unity and OpenUSD assets still load for rendering and collisions. The separate Isaac Sim/Kit adapter and legacy application examples are available at tag `v0.2.0`.
