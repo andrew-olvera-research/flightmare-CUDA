@@ -304,7 +304,7 @@ __device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Of
     if (net.outage_rates.data) {
       const float enter = net.outage_rates(n,k,0);
       const float recover = net.outage_rates(n,k,1);
-      if (enter >= 0 && recover >= 0 && enter+recover > 0 && enter+recover <= 1) {
+      if (enter >= 0 && recover >= 0 && enter <= 1 && recover <= 1 && enter+recover > 0) {
         profile.enter = enter;
         profile.recover = recover;
       }
@@ -315,7 +315,13 @@ __device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Of
     if (!fresh) {
       if (gap == 1) probability = bad ? 1-profile.recover : profile.enter;
       else {
-        const float memory = total == 1 ? 0 : expf(float(gap)*log1pf(-total));
+        // The second eigenvalue is negative for alternating links.
+        float memory = 0;
+        if (total < 1) memory = expf(float(gap)*log1pf(-total));
+        if (total > 1) {
+          memory = powf(total-1, float(gap));
+          if (gap & 1) memory = -memory;
+        }
         probability = equilibrium + (float(bad)-equilibrium)*memory;
       }
     }

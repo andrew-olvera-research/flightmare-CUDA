@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 import torch
-from flightlib_cuda import Environment, NetworkConfig
+from flightlib_cuda import Environment, NetworkConfig, ReceiverOutcome
 from validate_wisun import DIGEST, LIMITS, compare, distribution, fortnight, metrics, read_numbered_bursts
 
 
@@ -60,12 +60,13 @@ def describe(runs):
                 miss_after_reception_pairs=pairs[False, True], loss_run_histogram=dict(lengths))
 
 
-def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, rates=None):
+def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, rates=None, causes=None):
     # One independent two-station environment per uninterrupted counter run.
     # Only run lengths reach the simulator. The three offsets encode ordering;
     # time on this synthetic schedule has no physical delay interpretation.
     config = NetworkConfig(window_slots=1, offsets_ns=(0, 100000, 200000),
-                           range_edges_m=(), seed=seed, edge_outage_rates=conditions is not None, **(outage or {}))
+                           range_edges_m=(), seed=seed, edge_outage_rates=conditions is not None,
+                           record_outcomes=causes is not None, **(outage or {}))
     env = Environment(len(lengths), 2, control_dt=.001, auto_reset=False, network=config)
     net = env.network
     env.reset_state[2].fill_(5)
@@ -83,6 +84,8 @@ def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, 
         table = torch.tensor(rates, device=env.device)
     env.capture(random=False)
     masks = torch.empty((max(lengths), len(lengths)), device=env.device, dtype=torch.uint8)
+    if causes is not None:
+        outage_masks = torch.empty_like(masks)
     invalid = torch.zeros(len(lengths), device=env.device, dtype=torch.bool)
     for tick in range(max(lengths)):
         if conditions is not None:
@@ -96,11 +99,28 @@ def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, 
             events = net.inbox[:, :, 1, 0, 0].to(torch.uint8)
             masks[tick] = events[0] | (events[1] << 1) | (events[2] << 2)
             ev = net.evaluator
+            if causes is not None:
+                reason = ev["receiver_outcomes"][:, :, 1, 0]
+                delivered = reason == ReceiverOutcome.DELIVERED
+                lost = reason == ReceiverOutcome.OUTAGE
+                invalid |= ((delivered != events.bool()) |
+                            ~(delivered | lost | (reason == ReceiverOutcome.RESIDUAL_LOSS))).any(dim=0)
+                bits = lost.to(torch.uint8)
+                outage_masks[tick] = bits[0] | (bits[1] << 1) | (bits[2] << 2)
             invalid |= ((ev["admission"][:, :, 0] != 1) | (ev["completed"][:, :, 0] != 1) |
                         (ev["expired"][:, :, 0] != 0) | (ev["collided"][:, :, 0] != 0)).any(dim=0)
     if invalid.any().item():
         raise RuntimeError("single-source diagnostic requires every offer admitted and completed without collision or expiry")
     host = masks.T.cpu()
+    if causes is not None:
+        for hits, outages, length in zip(host, outage_masks.T.cpu(), lengths):
+            for received, lost in zip(hits[:length].tolist(), outages[:length].tolist()):
+                causes["delivered_packets"] += received.bit_count()
+                causes["outage_packets"] += lost.bit_count()
+                causes["residual_packets"] += 3-received.bit_count()-lost.bit_count()
+                if received == 0:
+                    cause = "outage" if lost == 7 else "residual" if lost == 0 else "mixed"
+                    causes[cause+"_updates"] += 1
     return [row[:length].tolist() for row, length in zip(host, lengths)]
 
 

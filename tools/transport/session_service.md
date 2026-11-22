@@ -1,5 +1,32 @@
 # Session loss and loaded service
 
+## Issue 25 receiver validation
+
+The former fit projected entry and recovery onto a sum of one whenever their sum exceeded one. They are probabilities conditioned on different states. This projection preserves the equilibrium outage fraction but changes how long outages last. The kernel now supports the full nonzero pair of probabilities in [0,1], including a negative second eigenvalue and its odd/even effect across idle intervals. Historical comparison arms retain the original projection.
+
+On 55ad, the projected outage-only and combined models both produced a p95 loss run of four. Only 14â€“16 completely missed updates in the combined model were caused entirely by residual packet losses. Removing the projection while holding residual parameters and pilot blocks fixed gave p95 three, matching measurement at all three seeds. Repeat-miss probability error was below one percentage point. This qualifies the existing two-state structure for the declared packet gates on this workload.
+
+The reserved 55dd test used all 14 eligible days. The unrestricted candidate passed the frozen packet-level gates at every seed. Its p95 was six against seven observed and its mean delivery error was 2.86â€“3.29 percentage points. The projected model also passed on this link. The development comparison isolates the improvement on 55ad. The confirmation establishes the supported packet-level result on a second link.
+
+Application freshness is a separate measurement. A monitor counting three consecutive offered updates without a receipt recorded 227 stale windows out of 11,397 on 55ad. Even after the correction the simulated count was 379â€“422. On 55dd the monitor recorded 853 out of 10,439 against 915â€“1,026 simulated. Windows never cross session boundaries or gaps in the witnessed schedule. These are capture-replay application diagnostics. A live application transfer claim requires independent physical receiver logs, a matched eligible schedule, and a tolerance and support requirement chosen before measurement.
+
+A paired binary diagnostic also tests recovery after one miss versus recovery later in the same outage. Both arms use the same pilot-derived stationary miss fraction and exclude the unobserved ends of runs from recovery estimation. On 55ad, the single-rate model produced 325–363 stale windows and the duration model produced 192–233 against 227 observed. On 55dd the corresponding ranges were 859–885 and 838–949 against 853. This identifies an application-sensitive difference on 55ad. The binary experiment does not establish that adding latent duration state to the full packet model would improve transfer.
+
+On an RTX 5070 Ti with 1,000 agents and eight broadcasters, the five-round median p95 graph step was 69.66 µs with scalar rates (.05, .45) and 69.82 µs with (.11, .99). Both have a stationary outage fraction of 10% and used 1,519,872 arena bytes.
+
+### Run the checks
+
+Populate the pinned 55dd file once inside the development container, then run the existing offline GPU CI lane:
+
+```sh
+PYTHONPATH=/build/network-ci/python /build/flightlib-cuda-python/bin/python tools/transport/qualify_probe.py /build/network-measurements/data_5563.csv --confirmation --download --require-qualified --output /tmp/confirmation.json
+python3 scripts/local_ci.py network-fidelity
+```
+
+The lane enforces both the 55ad regression and 55dd confirmation verdicts. Reports retain per-seed cause counts, recovery by age, heartbeat counts, support and whole-day intervals. Network parity checks clock-gap transitions against independent CPU iteration. The API lane checks supplied receiver interruptions and recovery on a shared broadcast. A supplied erasure mask selects recipients at submission and does not change channel capacity or predict the source of the impairment.
+
+For the physical telemetry phase, produce one CSV per run with columns `session,opportunity,received`. A session identifies one receiver stream. Include every eligible offer with an integer sequence number and a 0 or 1 reception, including misses. Run `python3 tools/transport/heartbeat.py measured.csv simulated.csv --min-windows N --tolerance E` with the preregistered values. The command checks absolute stale-window fraction error separately for each session and fails on schedule mismatch, inadequate coverage or exceeded tolerance. Its output describes the supplied sessions. A deployment study needs independent sessions covering its advertised conditions. GitHub CI runs portable scorer contract tests; the GPU and measured-data lanes run on the provisioned CUDA runner.
+
 ## Results
 
 The acknowledged-unicast candidate passes the independent ns-3 service comparison at 1, 4 and 8 synchronized sources. Receiver loss still needs local measurements to reproduce changes between sessions. The kernel now accepts separate outage transition rates for each subscribed direction. The comparisons below specify when those rates were available to the simulation.

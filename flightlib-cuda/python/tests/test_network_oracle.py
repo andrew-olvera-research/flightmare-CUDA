@@ -120,13 +120,13 @@ def test_persistent_receiver_across_clock_gaps_and_resets(edge_rates):
     env.capture(random=False)
     for tick in range(20):
         if edge_rates:
-            net.outage_rates[::2,...,0].fill_(.5 if tick < 13 else .25)
-            net.outage_rates[::2,...,1].fill_(.125)
+            net.outage_rates[::2,...,0].fill_(1.0 if tick < 13 else .25)
+            net.outage_rates[::2,...,1].fill_(1.0 if tick < 13 else .125)
         source = 1 if 8 <= tick < 12 else 0
         net.sources.fill_(source)
         net.size.zero_()
         net.broadcast.fill_(1)
-        if tick not in (2, 3, 4, 8, 9):
+        if tick not in (2, 3, 6, 8, 9):
             net.size[:, :, source].fill_(32)
         if tick == 14:
             env.selected.zero_()
@@ -140,13 +140,13 @@ def test_persistent_receiver_across_clock_gaps_and_resets(edge_rates):
             bad = [None] * 32
         env.step(graph=True, random=False)
         actual = net.inbox[:, :, 2, 0, 0].tolist()
-        if tick in (2, 3, 4, 8, 9):
+        if tick in (2, 3, 6, 8, 9):
             assert not any(actual[0]) and not any(actual[1])
             continue
         for e in range(32):
             enter, recover = cfg.outage_enter, cfg.outage_recover
             if edge_rates and e%2 == 0:
-                enter, recover = (.5 if tick < 13 else .25), .125
+                enter, recover = (1.0, 1.0) if tick < 13 else (.25, .125)
             p = enter / (enter + recover)
             if bad[e] is not None:
                 p = float(bad[e])

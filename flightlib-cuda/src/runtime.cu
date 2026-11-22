@@ -203,7 +203,7 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset bins=B && config.network_sample_loss ? config.network_range_edges.size()+1:0;
   const auto& outage = config.outage;
   if ((config.network_edge_outage_rates && !outage.period_ns) || !std::isfinite(outage.enter) || !std::isfinite(outage.recover) ||
-      outage.enter < 0 || outage.recover < 0 || outage.enter + outage.recover > 1 ||
+      outage.enter < 0 || outage.recover < 0 || outage.enter > 1 || outage.recover > 1 ||
       (outage.period_ns ? (!B || outage.enter + outage.recover == 0)
                         : (outage.enter != 0 || outage.recover != 0)))
     throw std::invalid_argument("invalid receiver outage period or transition probabilities");

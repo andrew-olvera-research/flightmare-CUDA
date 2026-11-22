@@ -188,6 +188,26 @@ def test_receiver_dispositions_are_evaluator_only():
     env.reset()
     assert reason.count_nonzero().item() == 0
 
+def test_broadcast_service_interruption_and_recovery():
+    from flightlib_cuda import ReceiverOutcome as R
+    env = Environment(1, 4, auto_reset=False, network=NetworkConfig(
+        offsets_ns=(0, 1000000, 2000000, 3000000), window_slots=1, record_outcomes=True))
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.size[:,0,0] = 32
+    net.broadcast[:,0,0] = 1
+    # One local receiver loses service first, then two, then both recover.
+    net.erased[:,0,0] = torch.tensor([0, 2, 6, 0], device=env.device)
+    env.step(random=False)
+    assert net.evaluator["completed"][:,0,0].tolist() == [1]*4
+    expected = [[1,1,1], [0,1,1], [0,0,1], [1,1,1]]
+    assert net.inbox[:,0,1:,0,0].tolist() == expected
+    assert net.evaluator["receiver_outcomes"][:,0,1:,0].tolist() == [
+        [R.DELIVERED if hit else R.ERASED for hit in row] for row in expected]
+
+
 def test_subscription_change_while_frame_is_on_air():
     from flightlib_cuda import ReceiverOutcome as R
     net_cfg = NetworkConfig(window_slots=1, dynamic_subscriptions=True, record_outcomes=True)

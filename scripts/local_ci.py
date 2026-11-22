@@ -187,7 +187,9 @@ def network_check(lane, runner, cuda_options):
                        str(Path(cache) / 'data_5563.csv'), *flags, '--output',
                        str(runner.directory / f'outages-{window}.json')],
                        env=dict(os.environ, PYTHONPATH=f'{build}/python'))
-        for label, flags in (("probe", []), ("prefix", ["--prefix"]), ("pilots", ["--pilots"])):
+        for label, flags in (("probe", []), ("prefix", ["--prefix"]), ("pilots", ["--pilots"]),
+                             ("attribution", ["--attribution", "--require-qualified"]),
+                             ("confirmation", ["--confirmation", "--require-qualified"])):
             runner.run('session-' + label, [CUDA_PYTHON, 'tools/transport/qualify_probe.py',
                        str(Path(cache) / 'data_5563.csv'), *flags, '--output',
                        str(runner.directory / f'session-{label}.json')], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
