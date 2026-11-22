@@ -1,6 +1,7 @@
 """Compare the resident single-outcome and persistent receiver on witnessed packet counters."""
 import argparse
 from collections import Counter
+from datetime import date
 from itertools import groupby
 import json
 import math
@@ -124,7 +125,9 @@ def evaluate(numbered, fit_days, test_days):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("csv", type=Path)
-    parser.add_argument("--confirmation", action="store_true", help="score the frozen November window")
+    windows = parser.add_mutually_exclusive_group()
+    windows.add_argument("--confirmation", action="store_true", help="score the frozen November window")
+    windows.add_argument("--supplemental", action="store_true", help="score the entire unused October 15-31 window")
     parser.add_argument("--require-qualified", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -133,6 +136,8 @@ if __name__ == "__main__":
                    "october_transfer": (october[:7], october[7:])}
     if args.confirmation:
         comparisons = {"november_confirmation": (october, fortnight(11)[:10])}
+    if args.supplemental:
+        comparisons = {"late_october_confirmation": (october, [date(2019,10,d).isoformat() for d in range(15,32)])}
     requested = {d for fit_days, test in comparisons.values() for d in fit_days + test}
     numbered = read_numbered_bursts(args.csv, requested, min_periods=0)
     results = {k: evaluate(numbered, fit_days, test) for k,(fit_days,test) in comparisons.items()}
