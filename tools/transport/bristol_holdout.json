@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "replay_sha256": "3202039cbddd7c441218973b3192d9a5ccb65d5e17aa16f33d06e3945277506c",
+  "replay_sha256": "c51eb5fe852aad0d4ee4a0c9d23bcc8c4c44dad4418ab40f4bd841d82e97c8cc",
   "sources": [
     {
       "url": "https://data.bris.ac.uk/datasets/eupowp7h3jl525yxhm3521f57/rawData/11022019/OBU-00-11022019-Morning/log_HP.txt",
@@ -375,20 +375,20 @@
     {
       "day": "11022019",
       "receiver_mask_counts": [
-        47048,
-        7110,
-        10051,
-        2265
+        57548,
+        3747,
+        5179,
+        0
       ],
       "denominator": 66474
     },
     {
       "day": "13022019",
       "receiver_mask_counts": [
-        54178,
-        7114,
-        8810,
-        1850
+        68264,
+        3688,
+        0,
+        0
       ],
       "denominator": 71952
     }

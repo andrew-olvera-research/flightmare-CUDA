@@ -29,6 +29,27 @@ For the physical telemetry phase, produce one CSV per run with columns `session,
 
 ## Results
 
+### Transfer with frequent local measurements
+
+On link 5563 the established schedule of 60 pilots every 240 opportunities overestimated sustained loss in October week two. The first seed produced 1,313 completely missed updates across 6,570 scored opportunities, against 952 measured. We tested shorter pilot intervals and shorter calibration history on this development split. The selected profile uses the first eight of each 32 witnessed updates as pilots and keeps the most recent eight pilot blocks in the same day. It estimates the outage fraction from pilot counts and its persistence from transitions within uninterrupted pilot runs. The week-one profile supplies one prior observation in the October tests. The following 24 updates are scored blind. Pilots consume 25% of a complete block and the shorter scoring windows censor some loss runs.
+
+| Window and link | Measured result on scored updates | Frequent-pilot GPU result across seeds 22-24 |
+| --- | --- | --- |
+| October 8-14, 5563, development | 1,119 complete misses in 6,697 updates. p95 run of 6. | All three seeds passed. p95 was 6-7. |
+| October 8-14, 55e4, independent link | 682 complete misses in 7,145 updates. p95 run of 4. | Mean delivery error was 1.73-2.46 percentage points. Two seeds gave p95 of 3, exceeding the 20% relative tolerance. One gave 4. Overall rejected. |
+| October 8-14, 560b, independent link | Zero complete misses in 7,393 updates. | Insufficient evidence for persistence. |
+| August 15-31 and September 15-30, 5563 | Three and fourteen complete misses, respectively. | Both windows met distribution tolerances and had insufficient events for tail qualification. |
+
+We selected the two independent links in repository order and froze the candidate before scoring either. The packet model can use these rates when a caller has local pilot observations. Transfer to an unseen session from a fixed prior alone remains unqualified. The fidelity lane enforces the October development regression and emits every other verdict alongside it. Run this command once in the development container to populate the two pinned link files.
+
+```sh
+PYTHONPATH=/build/network-ci/python /build/flightlib-cuda-python/bin/python tools/transport/qualify_probe.py /build/network-measurements/data_5563.csv --download --session-transfer --require-case october_diagnostic --output /tmp/session-transfer.json
+```
+
+### Downstream application contract
+
+The public API test builds a two-peer telemetry watchdog in each of two independent environments. A receiver reads validity and a payload handle from its inbox, looks up the generation tick in application-owned storage, and retains the newest reading. Three missed updates raise its alarm. An older reading leaves the alarm active and a fresh one clears it. The same test runs with eager stepping and CUDA graph replay. It verifies that a downstream consumer can implement freshness and peer isolation. Physical freshness accuracy remains subject to the separate measurement check above. [Executable consumer test](../../flightlib-cuda/python/tests/test_network.py)
+
 The acknowledged-unicast candidate passes the independent ns-3 service comparison at 1, 4 and 8 synchronized sources. Receiver loss still needs local measurements to reproduce changes between sessions. The kernel now accepts separate outage transition rates for each subscribed direction. The comparisons below specify when those rates were available to the simulation.
 
 ### What changed between receiver sessions

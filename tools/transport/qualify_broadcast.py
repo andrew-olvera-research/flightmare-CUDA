@@ -38,7 +38,10 @@ def masks_for_offers(offers, loss, seed):
         with env.access():
             if not net.evaluator["completed"][:n,0].all().item():
                 raise RuntimeError("incomplete roadside transmissions")
-            bits = net.inbox[:n,1:,0,0].to(torch.uint8)
+            inbox = net.inbox[:n,1:,0]
+            bits = inbox[...,0].to(torch.uint8)
+            if (bits.bool() & (inbox[...,1].long() != net.packet_id[:n,:1].long())).any().item():
+                raise RuntimeError("receiver inbox belongs to another offer")
             result.extend((bits[:,0]+2*bits[:,1]).tolist())
     return result
 
@@ -47,19 +50,19 @@ def rates(counts):
     return [counts[m]/sum(counts.values()) for m in range(4)]
 
 
-def evaluate(path):
+def evaluate(path, sessions=DAYS):
     counts = [[[0,0] for _ in range(len(EDGES)+1)] for _ in range(2)]
     held = []
     with path.open() as stream:
         for row in csv.DictReader(stream):
             dist = [float(row[f"distance_{i}"]) for i in range(2)]
             mask = int(row["mask"])
-            if row["day"] == DAYS[0]:
+            if row["day"] == sessions[0]:
                 for i,d in enumerate(dist):
                     cell = counts[i][bisect_right(EDGES,d)]
                     cell[0] += 1
                     cell[1] += (mask >> i) & 1
-            elif row["day"] == DAYS[1]:
+            elif row["day"] == sessions[1]:
                 held.append((int(row["time_ms"]),dist,mask))
     supported = [row for row in held if all(counts[i][bisect_right(EDGES,d)][0] >= 200
                                             for i,d in enumerate(row[1]))]
@@ -67,6 +70,12 @@ def evaluate(path):
         raise ValueError("no held-out offers supported by calibration")
     loss = [[1-hits/n if n else 0 for n,hits in peer] for peer in counts]
     measured = rates(Counter(mask for _,_,mask in supported))
+    expectation = [0.0]*4
+    for _, distances, _ in supported:
+        a,b = (loss[i][bisect_right(EDGES,d)] for i,d in enumerate(distances))
+        for j,prob in enumerate((a*b, (1-a)*b, a*(1-b), (1-a)*(1-b))):
+            expectation[j] += prob
+    expectation = [total/len(supported) for total in expectation]
     # Diagnostic only. Re-estimate the peers' marginal rates on the scoring day
     # within the same joint distance cells to isolate residual co-reception.
     cells = defaultdict(Counter)
@@ -100,8 +109,10 @@ def evaluate(path):
                            both_error_minute_bootstrap_95=[samples[24],samples[974]],
                            passes=errors["mask_tv"] <= .10 and abs(errors["both_error"]) <= .05
                            and abs(errors["neither_error"]) <= .05))
-    return dict(schema=1, fit_day=DAYS[0], held_day=DAYS[1], range_edges_m=EDGES,
+    return dict(schema=2, fit_day=sessions[0], held_day=sessions[1], range_edges_m=EDGES,
                 calibration_counts=counts, eligible_geometry_rows=len(held), supported=len(supported),
+                analytical_mask_probabilities=expectation,
+                observed_mask_counts=[sum(mask == m for _,_,mask in supported) for m in range(4)],
                 measured_mask_probabilities=measured, seeds=models,
                 held_day_marginal_diagnostic=dict(independent_both=independent_both,
                                                   independent_neither=independent_neither,
@@ -118,6 +129,7 @@ if __name__ == "__main__":
                         help="exit unsuccessfully when the candidate misses a qualification threshold")
     args = parser.parse_args()
     result = evaluate(args.geometry_csv)
+    result.update(fit_hp_center_mhz=5900, held_hp_center_mhz=5200)
     args.output.write_text(json.dumps(result, indent=2) + "\n")
     print(result["verdict"], "for", result["supported"], "supported two-receiver offers")
     raise SystemExit(int(args.require_qualified and result["verdict"] != "qualified"))

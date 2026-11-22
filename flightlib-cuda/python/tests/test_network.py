@@ -28,6 +28,44 @@ def test_resident_channel(graph):
     assert rows[1][2][0] == rows[0][1][0]
 
 
+@pytest.mark.parametrize("graph", [False, True])
+def test_downstream_telemetry_watchdog(graph):
+    """An application owns the payloads, latest sample and silence deadline for each peer."""
+    env = Environment(2, 3, network=NetworkConfig(window_slots=1), auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.broadcast[:, 0] = 1
+    net.size[:, 0] = 32
+    if graph:
+        env.capture(random=False)
+
+    # Sample 4 contains an older reading arriving after sample 3.
+    generation = torch.tensor([0, 1, 2, 3, 1, 5], device=env.device)
+    latest = torch.full((2, 2), -1, device=env.device)
+    alarms, samples = [], []
+    for tick in range(6):
+        with env.access():
+            net.handle[:, 0] = tick
+            net.erased[0, 0] = 2 if tick in (1, 2, 3) else 0
+        env.step(graph=graph, random=False)
+        with env.access():
+            # Only the inbox and application-owned clock/storage cross this boundary.
+            inbox = net.inbox[:, 1:, 0]
+            received = inbox[..., 0].bool()
+            sample = generation[inbox[..., 5].long()]
+            latest = torch.where(received, torch.maximum(latest, sample), latest)
+            alarms.append(((latest < 0) | (tick-latest >= 3)).tolist())
+            samples.append(latest.tolist())
+    assert [r[0][0] for r in samples] == [0, 0, 0, 0, 1, 5]
+    assert [r[0][0] for r in alarms] == [False, False, False, True, True, False]
+    for sample, alarm in zip(samples, alarms):
+        assert sample[0][1] == sample[1][0] == sample[1][1]
+        assert not (alarm[0][1] or any(alarm[1]))
+    assert samples[4][1] == [3, 3]
+
+
 def test_broadcast_payload_lifetime():
     env = Environment(2, 3, network=NetworkConfig(window_slots=1), auto_reset=False)
     env.reset_state[2].fill_(5)

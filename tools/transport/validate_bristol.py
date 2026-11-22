@@ -19,7 +19,8 @@ SIZES = ((232206813,253880147),(241168035,262880996))
 
 
 OBU_MAC = ("4c:5e:0c:84:35:f6", "00:0c:42:6f:bc:ad")
-RSU_MAC = "4c:5e:0c:84:36:17"
+HW_MAC = "4c:5e:0c:84:35:fb"
+HW_POSITION = (51.4582980, -2.6038980)
 
 
 DIGESTS = (
@@ -48,7 +49,7 @@ def fetch(path, url, sliced=False):
 
 def read(path, day, wanted_mac):
     start = int(datetime.strptime(day, "%d%m%Y").replace(tzinfo=timezone.utc).timestamp()*1000)
-    tx, rx, audit, rsu_rx = [], set(), Counter(), set()
+    tx, rx, audit, rsu_rx = [], set(), Counter(), {}
     digest = hashlib.sha256()
     with path.open("rb") as f:
         for raw in f:
@@ -72,8 +73,10 @@ def read(path, day, wanted_mac):
                     tx.append((stamp, key, lat, lon))
                 elif row.get("Validation") == "1" and "RxMAC;" in line:
                     mac = line.split("RxMAC;",1)[1].split(";",1)[0].lower()
-                    if mac == RSU_MAC:
-                        rsu_rx.add(key)
+                    if mac == HW_MAC:
+                        if (float(row["GpsLat"]), float(row["GpsLon"])) != HW_POSITION:
+                            raise RuntimeError("Hawthorns source MAC and payload position disagree")
+                        rsu_rx[key] = min(stamp, rsu_rx.get(key, stamp))
                     if mac == wanted_mac:
                         rx.add(key)
             except (ValueError, KeyError):
@@ -148,6 +151,31 @@ def count(sender, receiver):
             "loss_runs": len(runs), "max_loss_run": max(runs,default=0)}
 
 
+def broadcast_rows(offers, pair, offsets=None, clipped=False):
+    """One HW transmission and both active receiver logs, restricted to the same session."""
+    times = [[r[0] for r in log[0]] for log in pair]
+    unique = Counter(r[1] for r in offers)
+    for t, key, lat, lon in (offers[1:-1] if clipped else offers):
+        if (lat, lon) != HW_POSITION:
+            raise ValueError("unexpected transmitter position in Hawthorns TX log")
+        if unique[key] != 1:
+            continue
+        indexes = [bisect_left(a,t) for a in times]
+        if not all(0<i<len(a) and max(t-a[i-1],a[i]-t)<=250 for i,a in zip(indexes,times)):
+            continue
+        mask = 0
+        distances = []
+        for peer,(log,i) in enumerate(zip(pair,indexes)):
+            if key in log[4]:
+                mask |= 1 << peer
+                if offsets is not None:
+                    offsets[peer].append(log[4][key] - t)
+            fix = min(log[0][i-1:i+1], key=lambda row: abs(row[0]-t))
+            if 50 < fix[2] < 53 and -4 < fix[3] < -1:
+                distances.append(distance((lat,lon),fix[2:]))
+        yield t, mask, distances if len(distances) == 2 else None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("directory", type=Path, help="bristol-DDMMYYYY-{00,01}.log files")
@@ -185,28 +213,13 @@ def main():
             raise ValueError("unexpected RSU source SHA-256")
         sources.append(dict(url=rsu_url,
                             byte_range=[125829120,142606335],sha256=hw[3]))
-        masks=[0]*4
-        times=[[r[0] for r in log[0]] for log in pair]
-        unique=Counter(r[1] for r in hw[0])
-        for t,key,lat,lon in hw[0][1:-1]:
-            if unique[key]!=1: continue
-            indexes=[bisect_left(a,t) for a in times]
-            if not all(0<i<len(a) and max(t-a[i-1],a[i]-t)<=250 for i,a in zip(indexes,times)):
-                continue
-            mask=int(key in pair[0][4])+2*int(key in pair[1][4])
-            if geometry is not None:
-                distances = []
-                for log, i in zip(pair, indexes):
-                    fix = min(log[0][i-1:i+1], key=lambda row: abs(row[0]-t))
-                    if not (50 < fix[2] < 53 and -4 < fix[3] < -1 and 50 < lat < 53 and -4 < lon < -1):
-                        break
-                    distances.append(distance((lat,lon),fix[2:]))
-                if len(distances) == 2:
-                    geometry.append(f"{day},{t},{distances[0]},{distances[1]},{mask}\n")
-            masks[mask]+=1
+        masks = [0]*4
+        for t, mask, distances in broadcast_rows(hw[0], pair, clipped=True):
+            if geometry is not None and distances is not None:
+                geometry.append(f"{day},{t},{distances[0]},{distances[1]},{mask}\n")
+            masks[mask] += 1
             trace.append(ord("0")+mask)
-        broadcast.append(dict(day=day,receiver_mask_counts=masks,
-                              denominator=sum(masks)))
+        broadcast.append(dict(day=day,receiver_mask_counts=masks,denominator=sum(masks)))
     if geometry is not None:
         args.geometry_output.write_text("".join(geometry))
     if args.replay_output is not None:

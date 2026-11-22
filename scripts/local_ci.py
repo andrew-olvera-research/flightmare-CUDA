@@ -179,7 +179,10 @@ def network_check(lane, runner, cuda_options):
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         runner.run('mobile-broadcast', [CUDA_PYTHON, 'tools/transport/qualify_broadcast.py',
                    str(runner.directory / 'bristol-geometry.csv'), '--output',
-                   str(runner.directory / 'mobile-broadcast.json')],
+                   str(runner.directory / 'mobile-broadcast.json'), '--require-qualified'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('mobile-session', [CUDA_PYTHON, 'tools/transport/qualify_mobile_session.py',
+                   cache, '--output', str(runner.directory / 'mobile-session.json'), '--require-qualified'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         for window, flags in (("development", []), ("november", ["--confirmation"]),
                               ("late-october", ["--supplemental"])):
@@ -189,7 +192,8 @@ def network_check(lane, runner, cuda_options):
                        env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         for label, flags in (("probe", []), ("prefix", ["--prefix"]), ("pilots", ["--pilots"]),
                              ("attribution", ["--attribution", "--require-qualified"]),
-                             ("confirmation", ["--confirmation", "--require-qualified"])):
+                             ("confirmation", ["--confirmation", "--require-qualified"]),
+                             ("transfer", ["--session-transfer", "--require-case", "october_diagnostic"])):
             runner.run('session-' + label, [CUDA_PYTHON, 'tools/transport/qualify_probe.py',
                        str(Path(cache) / 'data_5563.csv'), *flags, '--output',
                        str(runner.directory / f'session-{label}.json')], env=dict(os.environ, PYTHONPATH=f'{build}/python'))

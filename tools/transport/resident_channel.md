@@ -48,7 +48,7 @@ From the repository root, run `docker compose exec -T dev python3 scripts/local_
 | `network-performance` | Three rounds of CUDA event timings across four batch shapes, each with plant-only, shared and sampled steps. The JSON lines are in `resident-step.log`. |
 | `network-fidelity` | Offline measured replay, fitted-profile error and saturated throughput. Detailed per-source metrics and thresholds are in `fidelity.json` and its accompanying reports. |
 
-Place the six Bristol files and pinned Wi-SUN `data_5563.csv` in `/build/network-measurements` inside the container, or set `FLIGHTMARE_MEASUREMENT_CACHE` to their directory. The source validators check the file digests. A missing input, replay discrepancy, or loss of a previously qualified measurement range fails the evidence gate. Individual physical fits can remain rejected when the gate passes. Read each scope's verdict before using it. The independent ns-3 comparison is documented in `ns3_comparison.md`.
+Set `FLIGHTMARE_MEASUREMENT_CACHE` or use the default `/build/network-measurements` in the development container. The Bristol scorer below fetches the original excerpts and morning captures. The session scorer fetches the two afternoon vehicle logs and the full February 13 transmitter log. The Wi-SUN qualification commands are in [the session report](session_service.md). The offline lane checks input hashes and fails on replay discrepancies or regressions in required profiles. The independent ns-3 comparison is documented in [the ns-3 report](ns3_comparison.md).
 
 ## Evidence
 
@@ -58,9 +58,12 @@ The Bristol holdout validator verifies the source hashes in four complete vehicl
 python3 tools/transport/validate_bristol.py /tmp/bristol --download --replay-output /tmp/bristol-masks > /tmp/bristol.json
 # Current candidate exits 1 after writing the report because its error gate failed.
 /build/packet-public/shared_test --broadcast-replay < /tmp/bristol-masks
+PYTHONPATH=/build/network-ci/python /build/flightlib-cuda-python/bin/python tools/transport/qualify_mobile_session.py /tmp/bristol --download --output /tmp/mobile-session.json --require-qualified
 ```
 
-The GPU replay checks identities and both receiver decisions for all 138,426 measured broadcasts, using synthetic airtime. Prediction on the vehicle-to-vehicle holdout failed 4 of 12 directional distance bands with a 0.10 absolute delivery tolerance. Independent mobility and deadline qualification remains open. The score_deadlines.py tool accepts actual sends and matched receptions plus a measured relative clock-error bound. It reports optimistic and conservative deadline-delivery fractions. [ns-3 comparison](ns3_comparison.md) · [Release checklist](v040_todo.md)
+The Hawthorns transmitter uses MAC `4c:5e:0c:84:35:fb` and embeds coordinates (51.4582980, −2.6038980). Another roadside unit reused station and sequence identifiers. Joining its receptions to the Hawthorns log gave median receiver-minus-sender times of 116 and 212 seconds for vehicle 00 on the two morning excerpts. Matching the MAC and embedded source position gave a median of 10 ms on both. The full same-channel holdout also checks timestamp agreement and verifies the packet ID on every GPU inbox delivery. Matched timestamp differences include logging and clock offsets. One-way deadline accuracy still needs a measured relative clock-error bound. [Trial configuration, Table 2](https://arxiv.org/pdf/1903.10289)
+
+GPU replay matched both receiver decisions for all 138,426 excerpt offers with synthetic airtime. The new same-channel score measures the entire distribution of which vehicles heard each transmission across a held-out drive. Vehicle-to-vehicle delivery still exceeds tolerance in 4 of 12 directional distance bands. [Per-profile broadcast results](v041_fidelity.md)
 ## Optional receiver state and qualification outputs
 
 With a persistent outage profile, `edge_outage_rates=True` exposes `net.outage_rates[environment, receiver, subscription, :]`. Write the entry and recovery probabilities on the environment stream. Each probability is in [0, 1] and at least one is positive. A zero-initialized or invalid pair falls back to the configured scalar rates. Switching rates retains the current receiver state. On the first eligible arrival after an idle interval, the current pair applies over that entire elapsed interval. The optional storage costs eight bytes per subscribed direction.

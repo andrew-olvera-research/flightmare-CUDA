@@ -19,6 +19,8 @@ LINKS = {"5565": "1b1be5293f45b58d7375e2a79871acf2968c5633062367711e4138179bb07c
 PILOT_LINKS = {"55ad": "872483c25b89f2db3b5d8eba317ff6dbf00748b3661e15ae45269be3d1d7867f",
                "55b3": "84bb6b926dc062103503995e6913d13b36936b4dfc8e9bdca7e3cc2419149710"}
 CONFIRMATION = {"55dd": "a0ec09b372a1c1b2e4ef16909e1734977eb1e7a93a2c90ad23f9a6de981f15a2"}
+TRANSFER_LINKS = {"55e4": "2126dc5967f49c3261ec01e169d4aba319b0d42cd3fd904feee64ec2ceaeb7ea",
+                  "560b": "b3e62341e2ace2af53c807295fa7fab2f567c3e97be4a7d8ae2dd8fd8515cf95"}
 
 
 def read_runs(path, dates, digest=DIGEST, signal=None):
@@ -235,7 +237,17 @@ def duration_diagnostic(calibration, lengths, prior, seed_key, results):
     return True
 
 
-def evaluate_local(days, dates, prior, outage, distributed, attribution=False):
+def frequent_pilot_rates(runs, prior):
+    """Use pilot occupancy for the stationary outage fraction and transitions for persistence."""
+    rates = prefix_rates(runs, prior, clip=False)
+    prior_fraction = prior[2] / sum(prior[2:])
+    bad = (sum(run.count(0) for run in runs) + prior_fraction) / (1 + sum(map(len, runs)))
+    # Preserve the stationary fraction while keeping each transition probability in [0, 1].
+    mix = min(sum(rates[2:]), 1 / max(bad, 1 - bad))
+    return [*rates[:2], bad * mix, (1 - bad) * mix]
+
+
+def evaluate_local(days, dates, prior, outage, distributed, attribution=False, frequent=False):
     table, conditions, daily = [prior], [], []
     unrestricted = [prior]
     binary = {name: {s: [] for s in SEEDS} for name in ("single","duration")} if attribution else {}
@@ -245,8 +257,11 @@ def evaluate_local(days, dates, prior, outage, distributed, attribution=False):
     for d in dates:
         if coverage[d] < MIN_DAILY_PERIODS:
             continue
-        history = deque(maxlen=4)
-        blocks = calibration_blocks(days[d], 240 if distributed else coverage[d], 60 if distributed else 240)
+        history = deque(maxlen=8 if frequent else 4)
+        block_size, pilot_size = (240, 60) if distributed else (coverage[d], 240)
+        if frequent:
+            block_size, pilot_size = 32, 8
+        blocks = calibration_blocks(days[d], block_size, pilot_size)
         daily.append([])
         prefix_sizes[d] = 0
         for block_index, (pilot, suffix) in enumerate(blocks):
@@ -255,7 +270,7 @@ def evaluate_local(days, dates, prior, outage, distributed, attribution=False):
             if suffix:
                 conditions.extend([[len(table)]*len(run) for run in suffix])
                 calibration = [run for block in history for run in block]
-                table.append(prefix_rates(calibration, prior))
+                table.append(frequent_pilot_rates(calibration, prior) if frequent else prefix_rates(calibration, prior))
                 if attribution:
                     unrestricted.append(prefix_rates(calibration, prior, clip=False))
                     if supported:
@@ -270,7 +285,10 @@ def evaluate_local(days, dates, prior, outage, distributed, attribution=False):
                                        for k,seeds in binary.items()} if supported else
                                       {"status": "unsupported stationary entry probability"})
         return dict(**result, unrestricted=unrestricted, **attribute(daily, table, outage, conditions, unrestricted))
-    return dict(**result, **score_models(daily, table, outage, conditions, "pilots" if distributed else "local_prefix"))
+    candidate = "pilots" if distributed else "local_prefix"
+    if frequent:
+        candidate = "frequent_pilots"
+    return dict(**result, **score_models(daily, table, outage, conditions, candidate))
 
 
 def evaluate(days, fit_dates, score_dates):
@@ -296,7 +314,9 @@ if __name__ == "__main__":
     modes.add_argument("--pilots", action="store_true", help="score rolling pilot calibration on two further links")
     modes.add_argument("--attribution", action="store_true", help="isolate loss mechanisms on development link 55ad")
     modes.add_argument("--confirmation", action="store_true", help="score the frozen candidate on link 55dd")
+    modes.add_argument("--session-transfer", action="store_true", help="test frequent local pilots on separate dates and two reserved links")
     parser.add_argument("--require-qualified", action="store_true", help="fail on rejected or insufficient evidence")
+    parser.add_argument("--require-case", action="append", default=[], help="enforce a named comparison independently")
     parser.add_argument("--download", action="store_true", help="fetch missing pinned link captures beside the input")
     args = parser.parse_args()
     october = fortnight(10)
@@ -305,14 +325,20 @@ if __name__ == "__main__":
               "september_transfer": (october, [f"2019-09-{d}" for d in range(15,31)])}
     dates = {d for fit, score in splits.values() for d in fit+score}
     signal = defaultdict(Counter)
-    local = args.prefix or args.pilots or args.attribution or args.confirmation
-    days = read_runs(args.csv, set(october) if local else dates, signal=signal)
+    local = args.prefix or args.pilots or args.attribution or args.confirmation or args.session_transfer
+    days = read_runs(args.csv, set(october) if local and not args.session_transfer else dates, signal=signal)
     if local:
         prior, outage = fit_rates([run for d in october for run in days[d]])
         report = {}
         links = {"55ad": PILOT_LINKS["55ad"]} if args.attribution else PILOT_LINKS if args.pilots else LINKS
         if args.confirmation:
             links = CONFIRMATION
+        if args.session_transfer:
+            for name, (fit, score) in splits.items():
+                params, profile = fit_rates([run for d in fit for run in days[d]])
+                report[name] = dict(fit_dates=fit, **evaluate_local(days, score, params[0], profile, True, frequent=True))
+            prior, outage = fit_rates([run for d in october[:7] for run in days[d]])
+            links = TRANSFER_LINKS
         for link, digest in links.items():
             path = args.csv.with_name(f"data_{link}.csv")
             if args.download and not path.exists():
@@ -325,6 +351,11 @@ if __name__ == "__main__":
                     temporary = Path(scratch)/path.name
                     temporary.write_bytes(data)
                     temporary.replace(path)
+            if args.session_transfer:
+                report[link] = dict(sha256=digest, fit_link="5563", fit_dates=october[:7],
+                                    **evaluate_local(read_runs(path, set(october[7:]), digest),
+                                                     october[7:], prior[0], outage, True, frequent=True))
+                continue
             report[link] = dict(sha256=digest, **evaluate_local(read_runs(path, set(october), digest),
                                                                  october, prior[0], outage, not args.prefix,
                                                                  args.attribution or args.confirmation))
@@ -337,5 +368,6 @@ if __name__ == "__main__":
     args.output.write_text(json.dumps(dict(schema=1, sha256=DIGEST, comparisons=report), indent=2) + "\n")
     for name, case in report.items():
         print(name, case["verdict"])
-    if args.require_qualified and any(case["verdict"] != "qualified" for case in report.values()):
+    required = report if args.require_qualified else args.require_case
+    if any(report[name]["verdict"] != "qualified" for name in required):
         raise SystemExit(1)
