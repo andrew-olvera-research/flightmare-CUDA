@@ -2,6 +2,8 @@
 
 Start the dev service from the repository root. Run these commands on the same checkout and build volume.
 
+For simulation-only verification use `release --no-training` on the clean candidate. This exercises installed evaluation with an initial checkpoint and omits the PPO update test and two optimizer-bearing examples. The report records whether training checks ran.
+
 ```sh
 docker compose exec -T dev bash scripts/setup-cuda-python.sh
 docker compose exec -T dev python3 scripts/local_ci.py verify

@@ -67,7 +67,7 @@ if(FLIGHTLIB_CUDA_BUILD_PYTHON)
   # installer supplies the venv's site-packages path relative to its prefix.
   set(FLIGHTLIB_CUDA_PYTHON_INSTALL_DIR "." CACHE STRING "Python module directory relative to the install prefix")
   set(python_package_dir "${FLIGHTLIB_CUDA_PYTHON_INSTALL_DIR}/flightlib_cuda")
-  foreach(module camera scene unity_scene usd_scene ros2 px4_sitl)
+  foreach(module camera scene unity_scene usd_scene ros2 px4_sitl loss_calibration)
     configure_file(python/flightlib_cuda/${module}.py python/flightlib_cuda/${module}.py COPYONLY)
     install(FILES python/flightlib_cuda/${module}.py DESTINATION "${python_package_dir}")
   endforeach()

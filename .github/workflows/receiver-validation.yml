@@ -10,3 +10,4 @@ jobs:
       - run: python3 -m unittest discover -s scripts/tests -p test_heartbeat.py
       - run: python3 -m unittest discover -s scripts/tests -p test_deadline_scores.py
       - run: python3 -m unittest discover -s scripts/tests -p test_bristol_contract.py
+      - run: python3 -m unittest discover -s scripts/tests -p test_loss_calibration.py

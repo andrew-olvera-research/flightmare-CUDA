@@ -72,6 +72,19 @@ For a history of length `d`, the node is `(1 << d) - 1 + bits`. Encode the newes
 
 For `S` submission offsets, the table costs `4 * S * ((2 << k) - 1)` bytes per subscribed direction, plus 16 bytes for the source, history and timestamp together. The Wi-SUN evaluator uses three offsets and five bits. [Transfer evidence and GPU measurements](history_transfer.md)
 
+For three-copy traffic, keep one calibrator per directed link. Supply consecutive three-bit reception masks, with bit zero for the earliest copy and zero for a witnessed update that lost every copy. Split runs at counter gaps. Call `reset_session()` when the physical session changes. Fit and upload the table between pilot blocks. The captured GPU step continues sampling from the resident table.
+
+```python
+from flightlib_cuda.loss_calibration import TripletLossCalibrator
+
+calibrator = TripletLossCalibrator(reference_runs, history_bits=5)
+table = calibrator.observe(pilot_runs)
+with env.access():
+    env.network.context_loss[world, receiver, subscription].copy_(
+        torch.as_tensor(table, device=env.device)
+    )
+```
+
 With a persistent outage profile, `edge_outage_rates=True` exposes `net.outage_rates[environment, receiver, subscription, :]`. Write the entry and recovery probabilities on the environment stream. Each probability is in [0, 1] and at least one is positive. A zero-initialized or invalid pair falls back to the configured scalar rates. Switching rates retains the current receiver state. On the first eligible arrival after an idle interval, the current pair applies over that entire elapsed interval. The optional storage costs eight bytes per subscribed direction.
 
 For addressed single-recipient frames, `unicast_ack_backoff=True` doubles the next contention window after a collision at the base window. A success or a second consecutive failure returns it to the configured base window. `unicast_success_hold_ns` and `unicast_failed_hold_ns` reserve the sender after data airtime ends according to the contention outcome. An offer while the sender is reserved returns `Full`. Data completion and receiver arrival retain their data-end timestamps. Broadcasts and multicast frames use the base window and release at data completion. These options model sender access for a one-attempt profile. [Measured scope and GPU cost](session_service.md)

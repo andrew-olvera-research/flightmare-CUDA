@@ -201,6 +201,13 @@ def network_check(lane, runner, cuda_options):
                    '--output', str(runner.directory / 'history-transfer.json'), '--require-case', '5563',
                    '--require-case', '55e4', '--require-case', '55e4-late-october'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        adaptive_cases = ('55e4', '55e4-late-october', '55e4-august', '5653', '5653-late-october',
+                          '5565-september', '5599-september', '55ad-september')
+        runner.run('adaptive-transfer', [CUDA_PYTHON, 'tools/transport/qualify_history.py', cache,
+                   '--adaptive', '--require-no-rejections', '--require-loss-case', '55e4-final',
+                   *(arg for case in adaptive_cases for arg in ('--require-case', case)),
+                   '--output', str(runner.directory / 'adaptive-transfer.json')],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-performance':
         runner.run('history-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--triplets',
                    '--senders', '1', '8'], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
@@ -222,7 +229,7 @@ def network_check(lane, runner, cuda_options):
         network_python(runner, lane, build)
 
 
-def execute(profile, runner):
+def execute(profile, runner, *, training=True):
     arch = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
     cuda_options = [f'-DCMAKE_CUDA_ARCHITECTURES={arch}']
     if profile.startswith('network-'):
@@ -273,6 +280,7 @@ def execute(profile, runner):
             network_python(runner, lane, '/build/flightlib-cuda-python-native')
         runner.run('rl-build', [cuda_python, '-m', 'pip', 'install', '--no-deps', '--no-build-isolation', '-e', 'flightrl-cuda'])
         runner.run('rl-acceptance', [cuda_python, '-m', 'pytest', '-q', 'flightrl-cuda/tests',
+                   *([] if training else ['-k', 'not ppo_update_checkpoint_and_replay']),
                    f'--junitxml={runner.directory / "rl.xml"}'],
                    env=dict(os.environ, PYTHONPATH='/workspace/flightrl-cuda:/workspace/tools/profile:/build/flightlib-cuda-python-native/python'))
         # Install to a fresh destination so stale source/build imports cannot
@@ -294,17 +302,19 @@ def execute(profile, runner):
         )
         runner.run('installed-custom-collector', [cuda_python, '-c', consumer],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
-        runner.run('installed-course-rollout', [cuda_python, '-m', 'flightrl_cuda.course_rollout'],
-                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
-        runner.run('installed-swarm-rollout', [cuda_python, '-m', 'flightrl_cuda.course_rollout','--agent-collisions'],
-                   cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
+        if training:  # Both examples perform an optimizer update.
+            runner.run('installed-course-rollout', [cuda_python, '-m', 'flightrl_cuda.course_rollout'],
+                       cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
+            runner.run('installed-swarm-rollout', [cuda_python, '-m', 'flightrl_cuda.course_rollout','--agent-collisions'],
+                       cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         runner.run('installed-sensor-example', [cuda_python, '-m', 'flightrl_cuda.sensor_example'],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         runner.run('installed-transport-example', [cuda_python, '-m', 'flightrl_cuda.transport_example'],
                    cwd='/tmp', env=dict(os.environ, PYTHONPATH=str(install)))
         # Run from /tmp, with only the installed packages on PYTHONPATH.
         entry='import os,runpy; os.chdir("/tmp"); runpy.run_module("flightrl_cuda.train",run_name="__main__")'
-        runner.run('installed-rl-train', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2',
+        runner.run('installed-rl-train' if training else 'installed-initial-checkpoint',
+                   [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--updates','2' if training else '0',
                    '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
         runner.run('installed-rl-evaluate', [cuda_python,'-c',entry,'--envs','2','--slots','4','--steps','8','--evaluate',
                    '--checkpoint',str(checkpoint)], env=dict(os.environ,PYTHONPATH=str(install)))
@@ -367,7 +377,10 @@ def execute(profile, runner):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('profile', choices=PROFILES, nargs='?', default='fast')
+    parser.add_argument('--no-training', action='store_true', help='verify the runtime and installed evaluation with zero optimizer updates')
     args = parser.parse_args()
+    if args.no_training and args.profile not in ('release', 'verify'):
+        parser.error('--no-training applies to verify and release')
     directory = ROOT / '.local-ci' / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
                                     + '-' + args.profile)
     directory.mkdir(parents=True)
@@ -375,6 +388,8 @@ def main():
     report = {'profile': args.profile, 'status': 'failed', 'steps': runner.steps,
               'started_utc': datetime.now(timezone.utc).isoformat()}
     start = time.monotonic()
+    if args.profile in ('release', 'verify'):
+        report['training_checks_enabled'] = not args.no_training
     try:
         report['version'] = (ROOT / 'VERSION').read_text().strip()
         if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', report['version']):
@@ -399,7 +414,7 @@ def main():
             report[name] = capture(command)
         report['cuda_architectures'] = os.environ.get('FLIGHTMARE_CUDA_ARCHITECTURES', 'native')
         report['container_hostname'] = capture(['hostname'])
-        execute('verify' if args.profile == 'release' else args.profile, runner)
+        execute('verify' if args.profile == 'release' else args.profile, runner, training=not args.no_training)
         if fingerprint() != report['source_fingerprint']:
             raise RuntimeError('Source changed during validation; rerun against a stable tree')
         if args.profile == 'release' and (
