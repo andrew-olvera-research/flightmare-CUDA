@@ -210,6 +210,10 @@ class NetworkConfig:
     outage_recover: float = 0.0
     record_outcomes: bool = False
     dynamic_subscriptions: bool = False
+    edge_outage_rates: bool = False
+    unicast_ack_backoff: bool = False
+    unicast_success_hold_ns: int = 0
+    unicast_failed_hold_ns: int = 0
 
     @classmethod
     def from_profile(cls, path, **workspace):
@@ -272,6 +276,8 @@ class Network:
                                      "cancelled_handle", "last_reset_ns")):
                 self.evaluator[key] = cancellations[..., i]
         self.sources = borrow("sources").view(environments, slots, fanin)
+        if config.edge_outage_rates:
+            self.outage_rates = borrow("outage_rates").view(environments, slots, fanin, 2)
         if config.hidden_per_edge:
             self.hidden_sources = borrow("hidden_sources").view(environments, slots, fanin, config.hidden_per_edge)
         if config.range_edges_m is not None:

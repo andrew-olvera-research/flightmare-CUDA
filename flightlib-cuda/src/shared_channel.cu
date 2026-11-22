@@ -4,11 +4,15 @@
 
 namespace flightlib_cuda::packet {
 namespace {
-__device__ unsigned backoff(Time row, Time sequence, SharedProfile profile) {
+__device__ bool singleReceiver(const Frame& f) {
+  return !f.all_peers && f.receivers && !(f.receivers & (f.receivers-1));
+}
+__device__ unsigned backoff(Time row, Time sequence, SharedProfile profile, bool wide) {
   Time x = row + (Time(profile.seed) << 32) + sequence * 0x9e3779b97f4a7c15ULL;
   x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
   x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
-  return (x ^ (x >> 31)) % profile.window_slots;
+  const auto window = wide ? 2ULL*profile.window_slots : profile.window_slots;
+  return (x ^ (x >> 31)) % window;
 }
 
 __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media,
@@ -33,11 +37,15 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
     r = {};
     if (active && !active[base+j]) { s = {}; continue; }
     if (!offer.bytes) continue;
-    if (s.phase != Phase::Empty) { r.admission = Admission::Full; continue; }
+    const auto hold = s.collided ? p.unicast_failed_hold_ns : p.unicast_success_hold_ns;
+    if (s.phase != Phase::Empty || (hold && singleReceiver(s.frame) && m.now-s.finish < hold)) {
+      r.admission = Admission::Full;
+      continue;
+    }
     if(offer.expiry_ns && offer.expiry_ns<m.now){ r.admission=Admission::Deadline;continue; }
     s.submitted = m.now;
     s.frame = offer;
-    s.remaining = backoff(base+j, ++s.sequence, p);
+    s.remaining = backoff(base+j, ++s.sequence, p, p.unicast_ack_backoff && s.wide_backoff && singleReceiver(offer));
     s.phase = Phase::Waiting;
     r.admission = Admission::Accepted;
   }
@@ -122,6 +130,8 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
       } else if (!r.expired && !s.collided) {
         s.received_copies += __popcll(r.receivers);
       }
+      if (p.unicast_ack_backoff && singleReceiver(s.frame))
+        s.wide_backoff = s.collided && !s.wide_backoff;
       s.phase = Phase::Empty;
     }
   }
@@ -164,7 +174,7 @@ void continueSharedSchedule(unsigned domains,unsigned stations,unsigned dt,Share
     Medium* m,const Frame* f,Sender* s,Reception* r,cudaStream_t stream,const std::uint8_t* active,
     unsigned segments,const unsigned* offsets,TimelineCursor* cursors,unsigned budget,unsigned output_rows){
   if ((!cursors && (output_rows<segments || budget<segments)) || !segments || (segments>1 && !offsets) || !domains || domains > INT32_MAX || !stations || !dt || !p.window_slots ||
-      !p.slot_ns || !p.ns_per_byte || !m || !f || !s || !r)
+      (p.unicast_ack_backoff && p.window_slots > UINT32_MAX/2) || !p.slot_ns || !p.ns_per_byte || !m || !f || !s || !r)
     throw std::invalid_argument("invalid shared channel configuration");
   step<<<domains,128,0,stream>>>(stations,dt,p,m,f,s,r,active,segments,offsets,cursors,std::min(budget,output_rows));
   auto status = cudaGetLastError();

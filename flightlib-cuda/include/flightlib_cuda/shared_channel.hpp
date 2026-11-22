@@ -10,6 +10,8 @@ struct Frame { Time id, receivers, erased; unsigned receiver_base, bytes; std::u
 };
 struct SharedProfile {
   unsigned slot_ns, window_slots, ns_per_byte, preamble_ns, recovery_ns, seed;
+  bool unicast_ack_backoff{};
+  unsigned unicast_success_hold_ns{}, unicast_failed_hold_ns{};
 };
 struct Medium { Time now, next_slot, transmissions, collisions, busy_ns; };
 enum class Phase : unsigned { Empty, Waiting, OnAir };
@@ -18,7 +20,7 @@ struct Sender {
   Time submitted, finish, sequence, completions, received_copies;
   unsigned remaining;
   Phase phase;
-  bool collided;
+  bool collided, wide_backoff;
 };
 struct Reception {
   Time id, arrival, receivers;

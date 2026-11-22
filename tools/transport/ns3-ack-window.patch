@@ -1,0 +1,42 @@
+--- a/src/wifi/examples/wifi-bianchi.cc
++++ b/src/wifi/examples/wifi-bianchi.cc
+@@ -39,2 +39,3 @@
+ #include "ns3/wifi-mac-header.h"
++#include "ns3/txop.h"
+ #include "ns3/wifi-mac.h"
+@@ -107,2 +108,4 @@
+ bool tracing = false;    ///< Flag to enable/disable generation of tracing files
++uint64_t serviceRun = 10;
++bool fixedWindow = false;
+ uint32_t pktSize = 1500; ///< packet size used for the simulation (in bytes)
+@@ -2031,2 +2034,7 @@
+ {
++    if (Simulator::Now() >= Seconds(9.9))
++    {
++        std::cout << "station-cw " << Simulator::Now().GetNanoSeconds() << " "
++                  << ContextToNodeId(context) << " " << cw << "\n";
++    }
+     NS_LOG_INFO("CW time=" << Simulator::Now() << " node=" << ContextToNodeId(context)
+@@ -2457,3 +2465,3 @@
+     RngSeedManager::SetSeed(10);
+-    RngSeedManager::SetRun(10);
++    RngSeedManager::SetRun(serviceRun);
+
+@@ -2514,2 +2522,12 @@
+     WifiHelper::AssignStreams(devices, trialNumber);
++    if (fixedWindow)
++    {
++        Simulator::Schedule(Seconds(4.9), [devices]() {
++            for (auto it = devices.Begin(); it != devices.End(); ++it)
++            {
++                auto txop = DynamicCast<WifiNetDevice>(*it)->GetMac()->GetTxop();
++                txop->SetMaxCw(txop->GetMinCw(0), 0);
++            }
++        });
++    }
+
+@@ -2907,2 +2925,4 @@
+     cmd.AddValue("useRxHelper", "Enable WifiPhyRxTraceHelper on all devices", useRxHelper);
++    cmd.AddValue("serviceRun", "Independent random run for service validation", serviceRun);
++    cmd.AddValue("fixedWindow", "Keep unicast contention window at its minimum", fixedWindow);
+     cmd.AddValue("pktSize", "The packet size in bytes", pktSize);

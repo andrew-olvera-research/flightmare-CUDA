@@ -202,7 +202,7 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset rows=multiply(B,segments);
   const Offset bins=B && config.network_sample_loss ? config.network_range_edges.size()+1:0;
   const auto& outage = config.outage;
-  if (!std::isfinite(outage.enter) || !std::isfinite(outage.recover) ||
+  if ((config.network_edge_outage_rates && !outage.period_ns) || !std::isfinite(outage.enter) || !std::isfinite(outage.recover) ||
       outage.enter < 0 || outage.recover < 0 || outage.enter + outage.recover > 1 ||
       (outage.period_ns ? (!B || outage.enter + outage.recover == 0)
                         : (outage.enter != 0 || outage.recover != 0)))
@@ -213,7 +213,8 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
     previous=distance;
   }
   if(F && (multiply(rows,F)>Offset(INT32_MAX)*128 || F>A || !config.network_tick_ns || !config.shared_profile.slot_ns ||
-           !config.shared_profile.window_slots || !config.shared_profile.ns_per_byte))
+           !config.shared_profile.window_slots || !config.shared_profile.ns_per_byte ||
+           (config.shared_profile.unicast_ack_backoff && config.shared_profile.window_slots > UINT32_MAX/2)))
     throw std::invalid_argument("invalid shared channel capacity, clock or profile");
   AllocationPlan result;
 #define FLC_BUFFER(member, type, category, ...) append<type>(result, #member, category, {__VA_ARGS__}, config.debug_guards);

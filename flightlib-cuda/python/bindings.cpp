@@ -145,6 +145,7 @@ struct NativeEnvironment {
       }
       if(network.contains("dynamic_subscriptions"))c.network_dynamic_subscriptions=network["dynamic_subscriptions"].cast<bool>();
       if(network.contains("record_outcomes"))c.network_record_outcomes=network["record_outcomes"].cast<bool>();
+      if(network.contains("edge_outage_rates"))c.network_edge_outage_rates=network["edge_outage_rates"].cast<bool>();
       if(network.contains("outage_period_ns"))
         c.outage={network["outage_period_ns"].cast<Index>(),network["outage_enter"].cast<Scalar>(),
                   network["outage_recover"].cast<Scalar>()};
@@ -152,7 +153,10 @@ struct NativeEnvironment {
       if(!c.network_fanin)throw std::invalid_argument("network requires positive receiver fanin");
       c.shared_profile={network["slot_ns"].cast<Index>(),network["window_slots"].cast<Index>(),
         network["ns_per_byte"].cast<Index>(),network["preamble_ns"].cast<Index>(),
-        network["recovery_ns"].cast<Index>(),network["seed"].cast<Index>()};
+        network["recovery_ns"].cast<Index>(),network["seed"].cast<Index>(),
+        network.contains("unicast_ack_backoff") && network["unicast_ack_backoff"].cast<bool>(),
+        network.contains("unicast_success_hold_ns") ? network["unicast_success_hold_ns"].cast<Index>() : 0u,
+        network.contains("unicast_failed_hold_ns") ? network["unicast_failed_hold_ns"].cast<Index>() : 0u};
     }
     validateSensorPeriods(schedule,c.imu,c.odometry,c.barometer);
     if(c.imu.period_ns||c.odometry.period_ns||c.barometer.period_ns)c.sensor_step_ns=std::llround(double(dt)*1e9);

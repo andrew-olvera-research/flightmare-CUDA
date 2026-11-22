@@ -1,5 +1,7 @@
 # v0.4.1 receiver and contention investigation
 
+The follow-up tests conditional loss on four additional physical links and qualifies acknowledged unicast against a fresh ns-3 run. [Session loss, sender service and GPU measurements](session_service.md)
+
 ## Issue 24 qualification results, November 22, 2026
 
 The public environment takes traffic and topology as inputs. The evaluators score the resulting inbox against measured receivers. A model can pass software parity and still miss the measured distribution. The decisions below apply to the named traffic, dataset and observable.

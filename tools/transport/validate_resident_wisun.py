@@ -60,12 +60,12 @@ def describe(runs):
                 miss_after_reception_pairs=pairs[False, True], loss_run_histogram=dict(lengths))
 
 
-def simulate(lengths, after_rx, after_miss, seed, outage=None):
+def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, rates=None):
     # One independent two-station environment per uninterrupted counter run.
     # Only run lengths reach the simulator. The three offsets encode ordering;
     # time on this synthetic schedule has no physical delay interpretation.
     config = NetworkConfig(window_slots=1, offsets_ns=(0, 100000, 200000),
-                           range_edges_m=(), seed=seed, **(outage or {}))
+                           range_edges_m=(), seed=seed, edge_outage_rates=conditions is not None, **(outage or {}))
     env = Environment(len(lengths), 2, control_dt=.001, auto_reset=False, network=config)
     net = env.network
     env.reset_state[2].fill_(5)
@@ -76,10 +76,21 @@ def simulate(lengths, after_rx, after_miss, seed, outage=None):
         net.broadcast[:, :, 0].fill_(1)
         net.loss_after_rx.fill_(after_rx)
         net.loss_after_miss.fill_(after_miss)
+    if conditions is not None:
+        if list(map(len, conditions)) != lengths:
+            raise ValueError("probe conditions must cover the entire offered schedule")
+        classes = torch.nn.utils.rnn.pad_sequence([torch.tensor(row) for row in conditions]).to(env.device)
+        table = torch.tensor(rates, device=env.device)
     env.capture(random=False)
     masks = torch.empty((max(lengths), len(lengths)), device=env.device, dtype=torch.uint8)
     invalid = torch.zeros(len(lengths), device=env.device, dtype=torch.bool)
     for tick in range(max(lengths)):
+        if conditions is not None:
+            with env.access():
+                current = table[classes[tick]]
+                net.loss_after_rx[:,1,0,0].copy_(current[:,0])
+                net.loss_after_miss[:,1,0,0].copy_(current[:,1])
+                net.outage_rates[:,1,0].copy_(current[:,2:])
         env.step(graph=True, random=False)
         with env.access():
             events = net.inbox[:, :, 1, 0, 0].to(torch.uint8)

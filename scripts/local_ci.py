@@ -187,12 +187,24 @@ def network_check(lane, runner, cuda_options):
                        str(Path(cache) / 'data_5563.csv'), *flags, '--output',
                        str(runner.directory / f'outages-{window}.json')],
                        env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        for label, flags in (("probe", []), ("prefix", ["--prefix"]), ("pilots", ["--pilots"])):
+            runner.run('session-' + label, [CUDA_PYTHON, 'tools/transport/qualify_probe.py',
+                       str(Path(cache) / 'data_5563.csv'), *flags, '--output',
+                       str(runner.directory / f'session-{label}.json')], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-performance':
         runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--senders', '1', '4', '8'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         runner.run('per-sender-service', [CUDA_PYTHON, 'tools/transport/compare_contention.py',
                    '--output', str(runner.directory / 'contention.json')],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('session-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py',
+                   '--senders','1','4','8','--session-service'], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        ack = str(runner.directory / 'ack-service.json')
+        runner.run('ack-service', [CUDA_PYTHON, 'tools/transport/compare_contention.py',
+                   '--unicast-ack-backoff','--ack-hold','--output',ack], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('ack-reference', [sys.executable, 'tools/transport/score_ns3_service.py', '--cuda',ack,
+                   '--reference','tools/transport/ns3_service_run12.json','--require-qualified',
+                   '--output', str(runner.directory / 'ack-reference.json')])
     else:
         network_native(runner, lane, build)
         network_python(runner, lane, build)

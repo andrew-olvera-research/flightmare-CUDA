@@ -1,0 +1,471 @@
+{
+  "1": [
+    {
+      "reported_goodput_mbps": 24.17,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3020,
+          "wait_ns_p50_p95": [
+            45000,
+            122000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3021
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 3020
+      }
+    },
+    {
+      "reported_goodput_mbps": 24.1457,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3017,
+          "wait_ns_p50_p95": [
+            46000,
+            125000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3018
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 3017
+      }
+    },
+    {
+      "reported_goodput_mbps": 24.0411,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3004,
+          "wait_ns_p50_p95": [
+            49000,
+            124000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3004
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 3003
+      }
+    }
+  ],
+  "4": [
+    {
+      "reported_goodput_mbps": 25.1744,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1037,
+          "wait_ns_p50_p95": [
+            561000,
+            1730000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1042,
+          "wait_ns_p50_p95": [
+            556000,
+            1691000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1041,
+          "wait_ns_p50_p95": [
+            565000,
+            1662000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1039,
+          "wait_ns_p50_p95": [
+            563000,
+            1672000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "31": 816,
+        "15": 3343
+      },
+      "data_start_to_cw_update_ns": {
+        "221000": 1019,
+        "226000": 3140
+      }
+    },
+    {
+      "reported_goodput_mbps": 25.2707,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1044,
+          "wait_ns_p50_p95": [
+            559000,
+            1677000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1054,
+          "wait_ns_p50_p95": [
+            548000,
+            1731000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1022,
+          "wait_ns_p50_p95": [
+            568000,
+            1873000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1023,
+          "wait_ns_p50_p95": [
+            567000,
+            1872000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3343,
+        "31": 800
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 3150,
+        "221000": 992,
+        "365400": 1
+      }
+    },
+    {
+      "reported_goodput_mbps": 25.2656,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1037,
+          "wait_ns_p50_p95": [
+            555000,
+            1703000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1037,
+          "wait_ns_p50_p95": [
+            558000,
+            1711000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1024,
+          "wait_ns_p50_p95": [
+            565000,
+            1752000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1042,
+          "wait_ns_p50_p95": [
+            557000,
+            1680000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3344,
+        "31": 797
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 3152,
+        "221000": 988
+      }
+    }
+  ],
+  "8": [
+    {
+      "reported_goodput_mbps": 22.6461,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 630,
+          "wait_ns_p50_p95": [
+            1077000,
+            3432000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 628,
+          "wait_ns_p50_p95": [
+            1146000,
+            3391000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 644,
+          "wait_ns_p50_p95": [
+            1073000,
+            3361000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 626,
+          "wait_ns_p50_p95": [
+            1099000,
+            3379000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 625,
+          "wait_ns_p50_p95": [
+            1100000,
+            3595000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 659,
+          "wait_ns_p50_p95": [
+            1025000,
+            3203000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 628,
+          "wait_ns_p50_p95": [
+            1084000,
+            3307000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 648,
+          "wait_ns_p50_p95": [
+            1031000,
+            3333000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3520,
+        "31": 1567
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 2815,
+        "221000": 2272
+      }
+    },
+    {
+      "reported_goodput_mbps": 22.4672,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 637,
+          "wait_ns_p50_p95": [
+            1036000,
+            3544000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 655,
+          "wait_ns_p50_p95": [
+            1028000,
+            3298000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 642,
+          "wait_ns_p50_p95": [
+            1049000,
+            3394000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 655,
+          "wait_ns_p50_p95": [
+            1048000,
+            3409000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 667,
+          "wait_ns_p50_p95": [
+            1017000,
+            3281000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 640,
+          "wait_ns_p50_p95": [
+            1045000,
+            3551000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 623,
+          "wait_ns_p50_p95": [
+            1072000,
+            3571000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 624,
+          "wait_ns_p50_p95": [
+            1083000,
+            3610000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3533,
+        "31": 1611
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 2792,
+        "221000": 2351
+      }
+    },
+    {
+      "reported_goodput_mbps": 22.4207,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 657,
+          "wait_ns_p50_p95": [
+            1053000,
+            3344000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 650,
+          "wait_ns_p50_p95": [
+            1039000,
+            3173000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 657,
+          "wait_ns_p50_p95": [
+            1047000,
+            3363000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 633,
+          "wait_ns_p50_p95": [
+            1078000,
+            3502000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 656,
+          "wait_ns_p50_p95": [
+            1037000,
+            3382000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 623,
+          "wait_ns_p50_p95": [
+            1164000,
+            3340000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 651,
+          "wait_ns_p50_p95": [
+            1048000,
+            3304000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 623,
+          "wait_ns_p50_p95": [
+            1098000,
+            3449000
+          ]
+        }
+      ],
+      "cw_counts": {
+        "15": 3548,
+        "31": 1602
+      },
+      "data_start_to_cw_update_ns": {
+        "226000": 2790,
+        "221000": 2359
+      }
+    }
+  ]
+}

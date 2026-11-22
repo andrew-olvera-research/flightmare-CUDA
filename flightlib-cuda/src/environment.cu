@@ -292,7 +292,7 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
 // A bad period suppresses every eligible reception on this directed subscription.
 __device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Offset lane,
                                Index source, std::uint64_t arrival) {
-  const auto profile = net.outage;
+  auto profile = net.outage;
   const auto good_tag = 2ULL*source + 1;
   const auto tag = net.outage_tag(n,k);
   const auto last = net.outage_last_ns(n,k);
@@ -301,6 +301,14 @@ __device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Of
   const auto gap = epoch - last / profile.period_ns;
   bool bad = tag == good_tag + 1;
   if (fresh || gap) {
+    if (net.outage_rates.data) {
+      const float enter = net.outage_rates(n,k,0);
+      const float recover = net.outage_rates(n,k,1);
+      if (enter >= 0 && recover >= 0 && enter+recover > 0 && enter+recover <= 1) {
+        profile.enter = enter;
+        profile.recover = recover;
+      }
+    }
     const float total = profile.enter + profile.recover;
     const float equilibrium = profile.enter / total;
     float probability = equilibrium;

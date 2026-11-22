@@ -7,11 +7,14 @@ import torch
 from flightlib_cuda import Environment, NetworkConfig
 
 
-def measure(senders, seed, workload="saturated"):
+def measure(senders, seed, workload="saturated", unicast_ack_backoff=False, ack_hold=False):
     # 1000-byte offers every 100 us. Each 1 ms plant tick contains ten offers per sender.
     offsets = tuple(range(0, 1000000, 100000))
     env = Environment(1, senders + 1, control_dt=.001, auto_reset=False,
-                      network=NetworkConfig(offsets_ns=offsets, fanin=senders, seed=seed))
+                      network=NetworkConfig(offsets_ns=offsets, fanin=senders, seed=seed,
+                                            unicast_ack_backoff=unicast_ack_backoff,
+                                            unicast_success_hold_ns=46000 if ack_hold else 0,
+                                            unicast_failed_hold_ns=41000 if ack_hold else 0))
     env.reset_state[2].fill_(5)
     env.reset()
     net = env.network
@@ -60,13 +63,18 @@ def measure(senders, seed, workload="saturated"):
                                completed=len(values), collisions=collided, delivered=delivered,
                                wait_ns_p50_p95=torch.quantile(values, torch.tensor([.5,.95])).tolist()))
     return dict(senders=senders, seed=seed, seconds=1, workload=workload, offset_interval_us=100,
+                unicast_ack_backoff=unicast_ack_backoff, ack_hold=ack_hold,
                 goodput_mbps=sum(row["delivered"]*row["bytes"] for row in per_sender)*8e-6, per_sender=per_sender)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--unicast-ack-backoff", action="store_true")
+    parser.add_argument("--ack-hold", action="store_true", help="add the measured service fixture's ACK admission hold")
     args = parser.parse_args()
-    results = [measure(n, seed) for n in (1, 4, 8) for seed in (22, 23, 24)]
-    results.extend(measure(8, 22, load) for load in ("periodic","bursty-mixed","asymmetric"))
+    results = [measure(n, seed, unicast_ack_backoff=args.unicast_ack_backoff, ack_hold=args.ack_hold)
+               for n in (1, 4, 8) for seed in (22, 23, 24)]
+    results.extend(measure(8, 22, load, args.unicast_ack_backoff, args.ack_hold)
+                   for load in ("periodic","bursty-mixed","asymmetric"))
     args.output.write_text(json.dumps(results, indent=2) + "\n")

@@ -9,13 +9,16 @@ from flightlib_cuda import Environment, NetworkConfig, ReceiverOutcome
 
 def cycle(persistent=False):
     config = (NetworkConfig(window_slots=1, outage_period_ns=10000000, outage_enter=.05,
-                            outage_recover=.45, record_outcomes=True, dynamic_subscriptions=True)
+                            outage_recover=.45, record_outcomes=True, dynamic_subscriptions=True, edge_outage_rates=True)
               if persistent else NetworkConfig(window_slots=1))
     domains, slots = (256,16) if persistent else (32,8)
     env = Environment(domains, slots, network=config, auto_reset=False)
     env.reset_state[2].fill_(5)
     env.reset()
     net = env.network
+    if persistent:
+        net.outage_rates[...,0].fill_(.05)
+        net.outage_rates[...,1].fill_(.45)
     net.sources.zero_()
     net.broadcast[:, 0] = 1
     net.size[:, 0] = 100
