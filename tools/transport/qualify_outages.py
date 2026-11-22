@@ -100,7 +100,7 @@ def evaluate(numbered, fit_days, test_days):
     calibration = contiguous_runs(fit_days, numbered)
     eligible = [d for d in test_days if len(numbered[d]) >= MIN_DAILY_PERIODS]
     result = dict(fit_days=fit_days, daily_coverage={d: len(numbered[d]) for d in test_days})
-    if len(eligible) < 7:
+    if not eligible:
         return dict(**result, verdict="insufficient_evidence")
     if any(len(numbered[d]) < MIN_DAILY_PERIODS for d in fit_days):
         raise ValueError("insufficient calibration coverage")
@@ -117,7 +117,9 @@ def evaluate(numbered, fit_days, test_days):
         result["models"][name] = dict(after_rx=after_rx, after_miss=after_miss,
                                       outage=outage, seeds=seeds)
     verdicts = [s["verdict"] for s in result["models"]["persistent"]["seeds"].values()]
-    result["verdict"] = ("rejected" if "rejected" in verdicts else
+    result["coverage_sufficient"] = len(eligible) >= 7
+    result["verdict"] = ("insufficient_evidence" if not result["coverage_sufficient"] else
+                         "rejected" if "rejected" in verdicts else
                          "insufficient_evidence" if "insufficient_evidence" in verdicts else "qualified")
     return result
 

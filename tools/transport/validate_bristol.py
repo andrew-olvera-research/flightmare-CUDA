@@ -152,9 +152,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("directory", type=Path, help="bristol-DDMMYYYY-{00,01}.log files")
     ap.add_argument("--replay-output", type=Path, help="write two-receiver masks for shared_test --broadcast-replay")
+    ap.add_argument("--geometry-output", type=Path, help="write eligible roadside offers and receiver distances")
     ap.add_argument("--download",action="store_true",help="fetch missing pinned source files (about 1 GB)")
     args = ap.parse_args()
     trace = bytearray()
+    geometry = ["day,time_ms,distance_0,distance_1,mask\n"] if args.geometry_output else None
     sessions, sources, broadcast = [], [], []
     for session, day in enumerate(DAYS):
         pair = []
@@ -186,16 +188,27 @@ def main():
         masks=[0]*4
         times=[[r[0] for r in log[0]] for log in pair]
         unique=Counter(r[1] for r in hw[0])
-        for t,key,*_ in hw[0][1:-1]:
+        for t,key,lat,lon in hw[0][1:-1]:
             if unique[key]!=1: continue
             indexes=[bisect_left(a,t) for a in times]
             if not all(0<i<len(a) and max(t-a[i-1],a[i]-t)<=250 for i,a in zip(indexes,times)):
                 continue
             mask=int(key in pair[0][4])+2*int(key in pair[1][4])
+            if geometry is not None:
+                distances = []
+                for log, i in zip(pair, indexes):
+                    fix = min(log[0][i-1:i+1], key=lambda row: abs(row[0]-t))
+                    if not (50 < fix[2] < 53 and -4 < fix[3] < -1 and 50 < lat < 53 and -4 < lon < -1):
+                        break
+                    distances.append(distance((lat,lon),fix[2:]))
+                if len(distances) == 2:
+                    geometry.append(f"{day},{t},{distances[0]},{distances[1]},{mask}\n")
             masks[mask]+=1
             trace.append(ord("0")+mask)
         broadcast.append(dict(day=day,receiver_mask_counts=masks,
                               denominator=sum(masks)))
+    if geometry is not None:
+        args.geometry_output.write_text("".join(geometry))
     if args.replay_output is not None:
         args.replay_output.write_bytes(trace)
     scores = []

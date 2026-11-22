@@ -7,7 +7,7 @@ import torch
 from flightlib_cuda import Environment, NetworkConfig
 
 
-def measure(senders, seed):
+def measure(senders, seed, workload="saturated"):
     # 1000-byte offers every 100 us. Each 1 ms plant tick contains ten offers per sender.
     offsets = tuple(range(0, 1000000, 100000))
     env = Environment(1, senders + 1, control_dt=.001, auto_reset=False,
@@ -15,9 +15,19 @@ def measure(senders, seed):
     env.reset_state[2].fill_(5)
     env.reset()
     net = env.network
+    sizes = ([128 if i % 2 else 1000 for i in range(senders)]
+             if workload in ("bursty-mixed","asymmetric") else [1000]*senders)
+    offers = torch.tensor(sizes).expand(len(offsets), senders).clone()
+    if workload == "periodic":
+        offers[1:] = 0
+    elif workload == "bursty-mixed":
+        offers[4:] = 0
+    elif workload == "asymmetric":
+        offers[1:, -1] = 0
+    offered = offers.count_nonzero(dim=0).tolist()
     with env.access():
         net.sources.copy_(torch.arange(senders, device=env.device).expand_as(net.sources))
-        net.size[:, 0, :senders].fill_(1000)
+        net.size[:, 0, :senders].copy_(offers)
         net.receivers[:, 0, :senders].fill_(1 << senders)
     env.capture(random=False)
     for _ in range(100):
@@ -43,14 +53,14 @@ def measure(senders, seed):
     for sender, (accepted, rejected, collided, delivered) in enumerate(counts.T.tolist()):
         values = waits[:, :, sender].flatten()
         values = values[values >= 0].float()
-        if (accepted + rejected != ticks * len(offsets) or
+        if (accepted + rejected != ticks * offered[sender] or
                 len(values) != collided + delivered or abs(accepted - len(values)) > 1):
             raise RuntimeError(f"sender {sender} offer/completion accounting failed")
-        per_sender.append(dict(sender=sender, accepted=accepted, full=rejected,
+        per_sender.append(dict(sender=sender, bytes=sizes[sender], offered=ticks*offered[sender], accepted=accepted, full=rejected,
                                completed=len(values), collisions=collided, delivered=delivered,
                                wait_ns_p50_p95=torch.quantile(values, torch.tensor([.5,.95])).tolist()))
-    return dict(senders=senders, seed=seed, seconds=1, packet_bytes=1000, interval_us=100,
-                goodput_mbps=sum(row["delivered"] for row in per_sender)*.008, per_sender=per_sender)
+    return dict(senders=senders, seed=seed, seconds=1, workload=workload, offset_interval_us=100,
+                goodput_mbps=sum(row["delivered"]*row["bytes"] for row in per_sender)*8e-6, per_sender=per_sender)
 
 
 if __name__ == "__main__":
@@ -58,4 +68,5 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     results = [measure(n, seed) for n in (1, 4, 8) for seed in (22, 23, 24)]
+    results.extend(measure(8, 22, load) for load in ("periodic","bursty-mixed","asymmetric"))
     args.output.write_text(json.dumps(results, indent=2) + "\n")

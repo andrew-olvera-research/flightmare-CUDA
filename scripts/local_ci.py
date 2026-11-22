@@ -150,7 +150,7 @@ def network_check(lane, runner, cuda_options):
                'network-api': ['packet_test', 'shared_test', '_native'],
                'network-health': ['packet_test', '_native'], 'network-performance': ['_native'],
                'network-fidelity': ['packet_test', 'shared_test', '_native'],
-               'network-sanitize': ['packet_test', 'shared_test']}
+               'network-sanitize': ['packet_test', 'shared_test', '_native']}
     runner.cmake('network', 'flightlib-cuda', build,
                  ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
                   '-DFLIGHTLIB_CUDA_BUILD_RUNTIME=ON', '-DFLIGHTLIB_CUDA_BUILD_PYTHON=ON',
@@ -165,6 +165,11 @@ def network_check(lane, runner, cuda_options):
             for target in ('packet_test', 'shared_test'):
                 runner.run(f'{tool}-{target}', ['compute-sanitizer', '--tool', tool,
                            '--error-exitcode', '1', *flags, f'{build}/{target}'])
+            runner.run(f'{tool}-resident-receiver', ['compute-sanitizer', '--tool', tool,
+                       '--error-exitcode','1', *flags, CUDA_PYTHON, '-m', 'pytest', '-q',
+                       f'{NETWORK_TESTS}/test_network_oracle.py::test_persistent_receiver_across_clock_gaps_and_resets',
+                       f'{NETWORK_TESTS}/test_network.py::test_subscription_change_while_frame_is_on_air'],
+                       env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-fidelity':
         cache = os.environ.get('FLIGHTMARE_MEASUREMENT_CACHE', '/build/network-measurements')
         runner.run('measured-network', [sys.executable, 'tools/transport/check_fidelity.py',
@@ -172,6 +177,16 @@ def network_check(lane, runner, cuda_options):
         runner.run('resident-wisun', [CUDA_PYTHON, 'tools/transport/validate_resident_wisun.py',
                    str(Path(cache) / 'data_5563.csv'), '--output', str(runner.directory / 'resident-wisun.json')],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('mobile-broadcast', [CUDA_PYTHON, 'tools/transport/qualify_broadcast.py',
+                   str(runner.directory / 'bristol-geometry.csv'), '--output',
+                   str(runner.directory / 'mobile-broadcast.json')],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        for window, flags in (("development", []), ("november", ["--confirmation"]),
+                              ("late-october", ["--supplemental"])):
+            runner.run('outages-' + window, [CUDA_PYTHON, 'tools/transport/qualify_outages.py',
+                       str(Path(cache) / 'data_5563.csv'), *flags, '--output',
+                       str(runner.directory / f'outages-{window}.json')],
+                       env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-performance':
         runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--senders', '1', '4', '8'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))

@@ -66,7 +66,7 @@ struct RuntimeConfig {
   Index network_tick_ns{}, network_fanin{};
   std::vector<Index> network_offsets{0};
   Index carrier_group_size{}, hidden_per_edge{};
-  bool network_sample_loss{};
+  bool network_sample_loss{}, network_record_outcomes{}, network_dynamic_subscriptions{};
   std::vector<Scalar> network_range_edges;
   OutageProfile outage{};
 };
@@ -90,6 +90,10 @@ struct NetworkBuffers {
   Index group_size{};
   Vector<Scalar> range_edges;
   TensorView<Scalar,3> loss_after_rx, loss_after_miss;
+  Matrix<Mask> receiver_outcomes;
+  Matrix<std::uint64_t> reset_cancellation;
+  Matrix<Index> bound_source;
+  Matrix<std::uint64_t> bound_since_ns;
   Matrix<std::uint64_t> history;
   Matrix<std::uint64_t> outage_tag, outage_last_ns;
   OutageProfile outage{};

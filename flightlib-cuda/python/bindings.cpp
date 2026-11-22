@@ -143,6 +143,8 @@ struct NativeEnvironment {
         c.network_sample_loss=true;
         c.network_range_edges=network["range_edges_m"].cast<std::vector<Scalar>>();
       }
+      if(network.contains("dynamic_subscriptions"))c.network_dynamic_subscriptions=network["dynamic_subscriptions"].cast<bool>();
+      if(network.contains("record_outcomes"))c.network_record_outcomes=network["record_outcomes"].cast<bool>();
       if(network.contains("outage_period_ns"))
         c.outage={network["outage_period_ns"].cast<Index>(),network["outage_enter"].cast<Scalar>(),
                   network["outage_recover"].cast<Scalar>()};
@@ -242,7 +244,7 @@ PYBIND11_MODULE(_native,m){
   using flightlib_cuda::packet::Reception;
   m.attr("completion_offsets")=py::make_tuple(offsetof(Reception,admission),offsetof(Reception,completed),
       offsetof(Reception,collided),offsetof(Reception,expired),offsetof(Reception,handle),offsetof(Reception,fixture_label),
-        offsetof(Reception,submitted),offsetof(Reception,air_start),offsetof(Reception,air_end));
+        offsetof(Reception,submitted),offsetof(Reception,air_start),offsetof(Reception,air_end),offsetof(Reception,id),offsetof(Reception,attempt_id));
   m.def("profile_start",[]{if(cudaProfilerStart()!=cudaSuccess)throw std::runtime_error("profiler start failed");});
   m.def("profile_stop",[]{if(cudaProfilerStop()!=cudaSuccess)throw std::runtime_error("profiler stop failed");});
   py::class_<ModelConfig>(m,"ModelConfig").def(py::init<>())

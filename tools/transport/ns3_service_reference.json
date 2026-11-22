@@ -1,0 +1,404 @@
+{
+  "1": [
+    {
+      "reported_goodput_mbps": 24.1026,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3012,
+          "wait_ns_p50_p95": [
+            48000,
+            124000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 24.0965,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3011,
+          "wait_ns_p50_p95": [
+            48000,
+            125000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 24.1747,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 3021,
+          "wait_ns_p50_p95": [
+            45000,
+            123000
+          ]
+        }
+      ]
+    }
+  ],
+  "4": [
+    {
+      "reported_goodput_mbps": 24.886,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1025,
+          "wait_ns_p50_p95": [
+            576000,
+            1695000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1053,
+          "wait_ns_p50_p95": [
+            557000,
+            1737000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1042,
+          "wait_ns_p50_p95": [
+            558000,
+            1767000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1068,
+          "wait_ns_p50_p95": [
+            537000,
+            1726000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 25.1401,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1042,
+          "wait_ns_p50_p95": [
+            554000,
+            1848000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1020,
+          "wait_ns_p50_p95": [
+            576000,
+            1843000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1036,
+          "wait_ns_p50_p95": [
+            562000,
+            1852000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1055,
+          "wait_ns_p50_p95": [
+            559000,
+            1722000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 25.1055,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 1061,
+          "wait_ns_p50_p95": [
+            551000,
+            1709000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 1042,
+          "wait_ns_p50_p95": [
+            566000,
+            1682000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 1021,
+          "wait_ns_p50_p95": [
+            578000,
+            1732000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 1044,
+          "wait_ns_p50_p95": [
+            534000,
+            1893000
+          ]
+        }
+      ]
+    }
+  ],
+  "8": [
+    {
+      "reported_goodput_mbps": 22.5377,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 653,
+          "wait_ns_p50_p95": [
+            1044000,
+            3352000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 647,
+          "wait_ns_p50_p95": [
+            1033000,
+            3301000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 647,
+          "wait_ns_p50_p95": [
+            1028000,
+            3261000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 627,
+          "wait_ns_p50_p95": [
+            1205000,
+            3485000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 635,
+          "wait_ns_p50_p95": [
+            1060000,
+            3385000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 646,
+          "wait_ns_p50_p95": [
+            1029000,
+            3364000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 626,
+          "wait_ns_p50_p95": [
+            1092000,
+            3613000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 638,
+          "wait_ns_p50_p95": [
+            1058000,
+            3554000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 22.2548,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 625,
+          "wait_ns_p50_p95": [
+            1104000,
+            3418000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 653,
+          "wait_ns_p50_p95": [
+            1033000,
+            3416000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 652,
+          "wait_ns_p50_p95": [
+            1035000,
+            3310000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 651,
+          "wait_ns_p50_p95": [
+            1066000,
+            3251000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 623,
+          "wait_ns_p50_p95": [
+            1182000,
+            3412000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 671,
+          "wait_ns_p50_p95": [
+            1043000,
+            3090000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 665,
+          "wait_ns_p50_p95": [
+            1017000,
+            3326000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 631,
+          "wait_ns_p50_p95": [
+            1088000,
+            3267000
+          ]
+        }
+      ]
+    },
+    {
+      "reported_goodput_mbps": 22.5724,
+      "per_sender": [
+        {
+          "sender": 1,
+          "offered": 10000,
+          "transmitted": 621,
+          "wait_ns_p50_p95": [
+            1074000,
+            3557000
+          ]
+        },
+        {
+          "sender": 2,
+          "offered": 10000,
+          "transmitted": 632,
+          "wait_ns_p50_p95": [
+            1053000,
+            3375000
+          ]
+        },
+        {
+          "sender": 3,
+          "offered": 10000,
+          "transmitted": 640,
+          "wait_ns_p50_p95": [
+            1066000,
+            3347000
+          ]
+        },
+        {
+          "sender": 4,
+          "offered": 10000,
+          "transmitted": 624,
+          "wait_ns_p50_p95": [
+            1101000,
+            3395000
+          ]
+        },
+        {
+          "sender": 5,
+          "offered": 10000,
+          "transmitted": 670,
+          "wait_ns_p50_p95": [
+            1038000,
+            3251000
+          ]
+        },
+        {
+          "sender": 6,
+          "offered": 10000,
+          "transmitted": 646,
+          "wait_ns_p50_p95": [
+            1040000,
+            3317000
+          ]
+        },
+        {
+          "sender": 7,
+          "offered": 10000,
+          "transmitted": 622,
+          "wait_ns_p50_p95": [
+            1054000,
+            3414000
+          ]
+        },
+        {
+          "sender": 8,
+          "offered": 10000,
+          "transmitted": 628,
+          "wait_ns_p50_p95": [
+            1095000,
+            3307000
+          ]
+        }
+      ]
+    }
+  ]
+}

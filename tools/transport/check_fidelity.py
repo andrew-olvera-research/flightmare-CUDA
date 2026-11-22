@@ -62,7 +62,8 @@ def measure(name, cache, build, output):
 
         trace = output / f"{name}.masks"
         if name == "bristol":
-            report = evaluate("validate_bristol.py", [cache, "--replay-output", trace],
+            report = evaluate("validate_bristol.py", [cache, "--replay-output", trace,
+                              "--geometry-output", output / "bristol-geometry.csv"],
                               output / "bristol.json")
             baseline = read_json(HERE / "bristol_holdout.json")
             if report["replay_sha256"] != baseline["replay_sha256"]:

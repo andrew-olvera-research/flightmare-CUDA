@@ -107,6 +107,7 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
       r.handle = s.frame.handle;
       r.expired = s.frame.expiry_ns && s.finish>s.frame.expiry_ns;
       r.receiver_base = s.frame.receiver_base;
+      r.addressed = s.frame.receivers;
       r.all_peers = s.frame.all_peers;
       r.receivers = s.frame.receivers & ~s.frame.erased;
       if (s.collided) r.receivers = 0;

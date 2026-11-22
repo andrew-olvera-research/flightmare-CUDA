@@ -85,10 +85,21 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
     for(Offset row=n;row<net.offers.shape[0];row+=v.topology.batch.lanes){
       reinterpret_cast<packet::Frame*>(net.offers.data)[row]={};
       reinterpret_cast<packet::Reception*>(net.results.data)[row]={};
-      for(Offset k=0;k<net.sources.shape[1];++k)
+      for(Offset k=0;k<net.sources.shape[1];++k){
         for(unsigned f=0;f<6;++f)net.inbox(row,k,f)=0;
+        if(net.receiver_outcomes.data)net.receiver_outcomes(row,k)=0;
+      }
     }
-    reinterpret_cast<packet::Sender*>(net.senders.data)[n]={};
+    auto& sender=reinterpret_cast<packet::Sender*>(net.senders.data)[n];
+    if(net.reset_cancellation.data){
+      const bool pending=sender.phase!=packet::Phase::Empty;
+      net.reset_cancellation(n,0)=pending;
+      net.reset_cancellation(n,1)=pending ? sender.frame.id : 0;
+      net.reset_cancellation(n,2)=pending ? sender.frame.attempt_id : 0;
+      net.reset_cancellation(n,3)=pending ? sender.frame.handle : 0;
+      net.reset_cancellation(n,4)=net.reset_ns(n);
+    }
+    sender={};
 
   }
   v.episodes.command_time(n)=0;v.episodes.step(n)=0;++v.episodes.episode(n);
@@ -310,6 +321,19 @@ __device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Of
   return bad;
 }
 
+enum ReceiverOutcome : Mask { NoEvent, Delivered, Erased, Collision, Expired, Reset, Hidden, Outage, ResidualLoss, Rebound };
+
+__device__ Mask baseOutcome(const packet::Reception& r, Index source, Index receiver,
+                            std::uint64_t reset_ns) {
+  const unsigned bit = receiver-r.receiver_base;
+  const bool addressed = r.all_peers ? receiver != source : bit < 64 && ((r.addressed >> bit)&1);
+  if (!r.completed || !addressed) return NoEvent;
+  if (r.submitted < reset_ns) return Reset;
+  if (r.expired) return Expired;
+  if (r.collided) return Collision;
+  return Erased; // Refined below if the explicit receiver mask allows delivery.
+}
+
 template<bool Persistent>
 __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Scalar> positions, Index slots){
   Offset edge=Offset(blockIdx.x)*blockDim.x+threadIdx.x;
@@ -317,6 +341,15 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
   if(n>=net.sources.shape[0])return;
   Index source=net.sources(n,k), receiver=n%slots;
   Offset lanes=net.sources.shape[0], lane=n-receiver+source;
+  if(net.bound_source.data && net.bound_source(n,k) != source){
+    auto medium=reinterpret_cast<const packet::Medium*>(net.media.data);
+    const auto end=medium[n/net.group_size].now;
+    net.bound_since_ns(n,k)=end>=net.tick_ns ? end-net.tick_ns : 0;
+    net.bound_source(n,k)=source;
+    if(net.hidden_end.data)net.hidden_end(n,k)=0;
+    if(net.history.data)net.history(n,k)=0;
+    if(net.outage_tag.data)net.outage_tag(n,k)=0;
+  }
   if constexpr (Persistent) {
     const auto tag=net.outage_tag(n,k);
     if (tag && (tag-1)/2 != source) {
@@ -336,8 +369,15 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
   for(Offset segment=0;segment<net.offsets.shape[0];++segment){
     auto* fields=net.inbox.data+(segment*lanes*fan+edge)*6;
     for(unsigned i=0;i<6;++i)fields[i]=0;
+    Mask* cause=net.receiver_outcomes.data ? &net.receiver_outcomes(segment*lanes+n,k) : nullptr;
+    if(cause)*cause=NoEvent;
     if(source>=slots || !active[n])continue;
     auto r=reinterpret_cast<const packet::Reception*>(net.results.data)[segment*lanes+lane];
+    if(cause)*cause=baseOutcome(r,source,receiver,net.reset_ns(n));
+    if(net.bound_source.data && r.completed && r.submitted < net.bound_since_ns(n,k)){
+      if(cause && *cause!=NoEvent)*cause=Rebound;
+      continue;
+    }
     if(net.hidden_end.data && r.air_end){
       for(Offset interferer=0;interferer<net.hidden_sources.shape[2];++interferer){
         Index other=net.hidden_sources(n,k,interferer);
@@ -346,11 +386,17 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
         if(x.air_start<r.air_end && r.air_start<x.air_end)
           net.hidden_end(n,k)=r.air_end;
       }
-      if(net.hidden_end(n,k)==r.air_end)continue;
+      if(net.hidden_end(n,k)==r.air_end){
+        if(cause && *cause==Erased && packet::receivedBy(r,source,receiver,slots))*cause=Hidden;
+        continue;
+      }
     }
     if(r.submitted<net.reset_ns(n) || !packet::receivedBy(r,source,receiver,slots))continue;
     if constexpr (Persistent) {
-      if(receiverOutage(net,n,k,lane,source,r.arrival))continue;
+      if(receiverOutage(net,n,k,lane,source,r.arrival)){
+        if(cause)*cause=Outage;
+        continue;
+      }
     }
     if(net.history.data){
       auto last=net.history(n,k);
@@ -360,8 +406,12 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
       auto bits=mix(key ^ mix(r.attempt_id) ^ mix(r.id+1) ^ mix(r.submitted));
       bool drop=!(probability>=0 && probability<=1) || float(bits>>40)*(1.f/16777216.f)<probability;
       net.history(n,k)=2ULL*source+1+drop;
-      if(drop)continue;
+      if(drop){
+        if(cause)*cause=ResidualLoss;
+        continue;
+      }
     }
+    if(cause)*cause=Delivered;
     fields[0]=1;fields[1]=r.id;fields[2]=r.submitted;fields[3]=r.arrival;
     fields[4]=r.attempt_id;fields[5]=r.handle;
   }

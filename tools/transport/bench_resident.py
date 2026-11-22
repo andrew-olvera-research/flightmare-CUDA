@@ -8,15 +8,21 @@ import torch
 from flightlib_cuda import Environment, NetworkConfig
 
 
-def measure(domains, stations, mode, senders=1):
-    # Every receiver subscribes to every active sender.
-    net_config = None if mode=="plant" else NetworkConfig(fanin=senders, range_edges_m=() if mode=="sampled" else None)
+def measure(domains, stations, mode, senders=1, fanin=None):
+    fanin = senders if fanin is None else fanin
+    sampled = mode in ("sampled", "sampled-loss", "persistent")
+    outage = dict(outage_period_ns=10000000, outage_enter=.05, outage_recover=.45) if mode == "persistent" else {}
+    net_config = None if mode == "plant" else NetworkConfig(fanin=fanin, range_edges_m=() if sampled else None,
+                                                            **outage)
     env = Environment(domains, stations, network=net_config, auto_reset=False)
     env.reset_state[2].fill_(5)
     env.reset()
     if env.network:
         net=env.network
-        net.sources.copy_(torch.arange(senders, device=env.device).expand_as(net.sources))
+        net.sources.copy_(torch.arange(fanin, device=env.device).expand_as(net.sources))
+        if mode == "sampled-loss":
+            net.loss_after_rx.fill_(.1)
+            net.loss_after_miss.fill_(.1)
         net.size[:, :senders].fill_(1000)
         net.broadcast[:, :senders].fill_(1)
         if stations==1:
@@ -47,10 +53,18 @@ def measure(domains, stations, mode, senders=1):
             ev = net.evaluator
             if not ev["completed"][:, :senders].all().item():
                 raise RuntimeError("benchmark tick too short for all submissions")
-            successful = (ev["collided"][:, :senders] == 0).sum().item()
-        if net_config and deliveries != successful * max(1, stations-1):
+            successful = (ev["collided"][:, :fanin] == 0).sum().item()
+        possible = successful * max(1, stations-1)
+        if deliveries > possible or (mode in ("shared", "sampled") and deliveries != possible):
             raise RuntimeError("final inbox failed coverage check")
-    return dict(domains=domains,stations=stations,mode=mode,senders_per_medium=senders,median_us=statistics.median(samples),
+        # Count on a separate replay window so diagnostics stay outside the step timer.
+        total = torch.zeros((), dtype=torch.int64, device=env.device)
+        if net_config:
+            for _ in range(64):
+                graph.replay()
+                total += net.inbox[...,0].sum()
+        rate = total.item()/64*1e6/statistics.mean(samples)
+    return dict(fanin=fanin, useful_deliveries_per_second=rate, domains=domains,stations=stations,mode=mode,senders_per_medium=senders,median_us=statistics.median(samples),
                 p95_us=sorted(samples)[121],observations_final_step=deliveries,
                 arena_bytes=env._native.arena_bytes)
 
@@ -67,8 +81,9 @@ if __name__=="__main__":
     for e, s in ((1,1),(1,100),(1,1000),(100,10)):
         counts = sorted({n for n in args.senders if n <= s})
         if counts:
-            cases.append((e,s,"plant",0))
-            cases.extend((e,s,mode,n) for n in counts for mode in ("shared","sampled"))
+            cases.append((e,s,"plant",0,0))
+            cases.extend((e,s,mode,n,fan) for n in counts for fan in sorted({1,n})
+                         for mode in ("shared","sampled","sampled-loss","persistent"))
     for repeat in range(args.rounds):
         rng.shuffle(cases)
         for case in cases:

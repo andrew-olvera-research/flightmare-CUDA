@@ -1,5 +1,73 @@
 # v0.4.1 receiver and contention investigation
 
+## Issue 24 qualification results, November 22, 2026
+
+The public environment takes traffic and topology as inputs. The evaluators score the resulting inbox against measured receivers. A model can pass software parity and still miss the measured distribution. The decisions below apply to the named traffic, dataset and observable.
+
+| Profile or claim | Decision | Evidence |
+| --- | --- | --- |
+| Measured saturated throughput, 1–8 senders | Qualified for aggregate throughput on the Figure 5 workload | The existing hardware comparison remained within its 10% tolerance. |
+| Wi-SUN stationary triplets, previous sampler | Qualified for the September profile, rejected for October transfer | The measured-network suite retained both outcomes. |
+| Persistent Wi-SUN receiver, October 1–14 calibration | Qualified on the calibration sample only | Observed 2,032 completely missed updates and 1,255 adjacent pairs of misses. The previous sampler produced 1,534–1,581 misses, 485–534 pairs and a p95 run of 3. Persistent state produced 1,990–2,007 misses, 1,217–1,273 pairs and p95 of 7–8 against 8 observed. |
+| Same persistent algorithm, October 1–7 fit to October 8–14 | Rejected | It produced 506–566 complete misses out of 1,458 observed. Mean delivery missed by 16.7–17.4 percentage points. |
+| Frozen persistent candidate, November 1–10 and supplemental October 15–31 | Insufficient evidence in each window | Four and six days respectively met the 720-opportunity daily minimum. Seven were required per window. Descriptively, November had 881 misses in 4,457 opportunities against 413–503 predicted. Late October had 231 in 6,321 against 639–747 predicted. Both windows are now used. |
+| Bristol vehicle-to-vehicle delivery by direction and distance | Qualified in 8 of 12 bands, rejected in 4 | The held-out directional tolerance was 10 percentage points per band. |
+| Bristol roadside broadcast to two mobile receivers | Rejected | February 11 distance calibration predicted neither receiver got the packet 67.5–67.7% of the time across seeds. February 13 measured 75.30% on 71,952 supported offers. Both-received error was +0.43 to +0.55 percentage points. Using the scoring day's peer rates within the same distance cells left just 0.06 points of excess co-reception. That diagnostic points toward transfer of the individual reception rates as the first problem to investigate. |
+| Time until first, quorum or all receivers have a fresh update | Insufficient physical evidence | The scorer handles generation time, actual submissions, missing recipients, late or reordered deliveries and bounded clock error. The available mobile capture lacks a verified relative clock-error bound. Wi-SUN runs are in missed opportunities. |
+
+### Loaded service and runtime cost
+
+All eight ns-3 stations now associate and contribute in each of three trials. Active probing resolved the prior coverage failure. Both simulations offered synchronized 1,000-byte packets every 100 microseconds per sender. The table gives mean reported aggregate useful throughput and the median of per-sender/trial p95 submission-to-airtime waits. The CUDA profile admits one outstanding frame per sender. ns-3 uses a one-packet MAC queue and a retry limit of one. Queue occupancy while transmitting and acknowledgement handling can differ between those implementations.
+
+| Senders | CUDA / ns-3 useful Mbps | CUDA / ns-3 p95 wait (µs) |
+| ---: | ---: | ---: |
+| 1 | 24.74 / 24.12 | 177 / 124 |
+| 4 | 24.12 / 25.04 | 1,635 / 1,735 |
+| 8 | 19.21 / 22.45 | 2,656 / 3,358 |
+
+At eight senders, the GPU profile delivers 14.4% fewer useful bytes per second and its tail wait is 20.9% shorter. The public benchmark also exercises periodic, mixed-size bursty and asymmetric loads and checks offer/completion conservation per sender. Hardware queue timing and retry ownership remain open for this profile. [Per-station ns-3 reference across three trials](ns3_service_reference.json)
+
+On an RTX 5070 Ti with one 1,000-agent environment, eight 1,000-byte broadcasters and eight subscriptions per receiver, the following values are medians across three rounds of 128 timed CUDA graph replays. Sampled-loss and persistent modes have 10% marginal loss. Arena bytes include plant, inbox and network storage. The full sweep includes 100 environments of ten agents and single-source fan-in. No step-time or memory budget was specified.
+
+| Profile | Median step (µs) | p95 step (µs) | Arena bytes | Useful receiver deliveries per wall-clock second (millions) |
+| --- | ---: | ---: | ---: | ---: |
+| Plant only | 16.46 | 24.64 | 559,080 | — |
+| Shared airtime | 62.21 | 69.66 | 1,263,680 | 84.1 |
+| Sampled, zero residual loss | 62.50 | 69.63 | 1,391,872 | 79.4 |
+| Independent 10% loss | 64.10 | 69.73 | 1,391,872 | 72.0 |
+| Persistent 10% loss | 61.71 | 69.73 | 1,519,872 | 74.1 |
+
+The pre-change zero-residual sampler measured 63.02 µs median and 69.50 µs p95 across five rounds on this shape. In the preceding three-round sweep, independent and persistent loss measured 63.49 and 64.86 µs median, respectively. Their median ordering changed between runs. The memory increment is reproducible at 128,000 bytes across 8,000 edges.
+
+The 67,108,864-link-interval accounting soak passed. The 24-cycle public create/step/destroy run ended with the same free device memory and zero live Torch bytes. All eleven host UBSan native tests passed. Device leak and race instrumentation remains unverified because Compute Sanitizer could not initialize the WDDM debugger on this runner.
+
+### Reproduce
+
+Run from the repository root with the development container running. Each profile writes a timestamped directory under `.local-ci/`. The fidelity lane reports rejected and underpowered models as scientific results. For a release job, pass `--require-qualified` to the individual outage or broadcast scorer to enforce its verdict.
+
+```sh
+for profile in network-parity network-api network-fidelity network-performance network-health; do
+  docker compose exec -T dev python3 scripts/local_ci.py "$profile" || exit 1
+done
+docker compose exec -T dev python3 -m unittest discover -s scripts/tests -p test_deadline_scores.py
+# On a runner with a supported CUDA debugger
+docker compose exec -T dev python3 scripts/local_ci.py network-sanitize
+```
+
+For the service reference, in a disposable checkout of ns-3 revision `43dce6710b8df69685e3479c1d33a571dda714ea`, apply `tools/transport/ns3-service.patch` with `git apply` and build the wifi-bianchi example. The patch synchronizes application startup and traces application offers and PHY starts by packet identity. Run the following in a fresh results directory with the built executable on PATH. The scorer checks all 10,000 offers per sender per trial and matches every counted PHY start in the interval from 10 to 11 seconds.
+
+```sh
+for n in 1 4 8; do
+  ns3.44-wifi-bianchi --standard=11g --frequency=2.4 --phyMode=ErpOfdmRate54Mbps --infra=1 \
+    --nMinStas=$n --nMaxStas=$n --trials=3 --duration=1 --pktInterval=100 --pktSize=1000 \
+    --plotBianchiModel=0 --validate=0 --ns3::WifiMac::FrameRetryLimit=1 \
+    --ns3::WifiMacQueue::MaxSize=1p --ns3::StaWifiMac::ActiveProbing=true > service-$n.log || exit 1
+done
+python3 "$FLIGHTMARE_ROOT/tools/transport/score_ns3_service.py" . --output reference.json
+```
+
+## Original development record
+
 The first development checkpoint exercises the public GPU environment with measured reception outcomes withheld. The `network-fidelity` profile writes `resident-wisun.json` next to the existing replay and physical-fit reports. The `network-performance` profile writes graph step timings to `resident-step.log` and per-sender service measurements to `contention.json`.
 
 ## Receiver baseline

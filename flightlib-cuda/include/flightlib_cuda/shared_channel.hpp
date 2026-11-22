@@ -31,6 +31,7 @@ struct Reception {
   bool expired;
   unsigned fixture_label;
   Time air_start, air_end; // Occupancy visible to the evaluator on every overlapping interval.
+  Time addressed{}; // Original unicast/multicast mask, retained even when a frame fails.
 };
 // Expand a completion on demand. Full-domain broadcast excludes its source.
 __host__ __device__ inline bool receivedBy(const Reception& r, unsigned sender,

@@ -208,6 +208,8 @@ class NetworkConfig:
     outage_period_ns: int = 0
     outage_enter: float = 0.0
     outage_recover: float = 0.0
+    record_outcomes: bool = False
+    dynamic_subscriptions: bool = False
 
     @classmethod
     def from_profile(cls, path, **workspace):
@@ -223,6 +225,19 @@ class NetworkConfig:
         if not all(settings[k] for k in ("slot_ns", "window_slots", "ns_per_byte")):
             raise ValueError("slot, contention window and byte time must be positive")
         return cls(**settings, **workspace)
+
+
+class ReceiverOutcome(IntEnum):
+    NO_EVENT = 0
+    DELIVERED = 1
+    ERASED = 2
+    COLLISION = 3
+    EXPIRED = 4
+    RESET = 5
+    HIDDEN = 6
+    OUTAGE = 7
+    RESIDUAL_LOSS = 8
+    REBOUND = 9
 
 
 class Network:
@@ -245,11 +260,17 @@ class Network:
             key: results[:, offset:offset+dtype.itemsize].view(dtype).view(shape)
             for key, offset, dtype in zip(
                 ("admission","completed","collided","expired","completed_handle","fixture_label",
-                 "submitted_ns","air_start_ns","air_end_ns"),
+                 "submitted_ns","air_start_ns","air_end_ns","completed_id","completed_attempt_id"),
                 _native.completion_offsets,
                 (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64, torch.uint32,
-                 torch.int64, torch.int64, torch.int64))
+                 torch.int64, torch.int64, torch.int64, torch.int64, torch.int64))
         }
+        if config.record_outcomes:
+            self.evaluator["receiver_outcomes"] = borrow("receiver_outcomes").view(*shape, fanin)
+            cancellations = borrow("reset_cancellation").view(torch.int64).view(environments, slots, 5)
+            for i, key in enumerate(("reset_cancelled", "cancelled_id", "cancelled_attempt_id",
+                                     "cancelled_handle", "last_reset_ns")):
+                self.evaluator[key] = cancellations[..., i]
         self.sources = borrow("sources").view(environments, slots, fanin)
         if config.hidden_per_edge:
             self.hidden_sources = borrow("hidden_sources").view(environments, slots, fanin, config.hidden_per_edge)

@@ -1,0 +1,32 @@
+--- a/src/wifi/examples/wifi-bianchi.cc
++++ b/src/wifi/examples/wifi-bianchi.cc
+@@ -2251,6 +2251,10 @@
+ void
+ PhyTxTrace(std::string context, Ptr<const Packet> p, double txPowerW)
+ {
++    if (p->GetSize() >= pktSize && Simulator::Now() >= Seconds(9.9))
++    {
++        std::cout << "packet-air " << Simulator::Now().GetNanoSeconds() << " " << ContextToNodeId(context) << " " << p->GetUid() << "\n";
++    }
+     NS_LOG_INFO("PHY-TX-START time=" << Simulator::Now() << " node=" << ContextToNodeId(context)
+                                      << " size=" << p->GetSize() << " " << txPowerW);
+     if (tracing)
+@@ -2320,6 +2324,10 @@
+ void
+ SocketSendTrace(std::string context, Ptr<const Packet> p, const Address& addr)
+ {
++    if (p->GetSize() >= pktSize && Simulator::Now() >= Seconds(9.9))
++    {
++        std::cout << "packet-offer " << Simulator::Now().GetNanoSeconds() << " " << ContextToNodeId(context) << " " << p->GetUid() << "\n";
++    }
+     if (tracing)
+     {
+         socketSendTraceFile << Simulator::Now().GetSeconds() << " " << ContextToNodeId(context)
+@@ -2567,6 +2575,6 @@
+         client->SetAttribute("PacketSize", UintegerValue(pktSize));
+         client->SetAttribute("MaxPackets", UintegerValue(0));
+         client->SetAttribute("Interval", TimeValue(pktInterval));
+-        double start = startTime->GetValue();
++        double start = 5.0; // Synchronized offers after association.
+         NS_LOG_DEBUG("Client " << i << " starting at " << start);
+         client->SetStartTime(Seconds(start));

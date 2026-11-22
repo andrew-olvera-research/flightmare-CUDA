@@ -135,7 +135,7 @@ def test_directional_distance_and_loss_memory():
         assert net.inbox[0,:,0,0].tolist() == [0,1,far]
 
 def test_hidden_sender_overlap_survives_tick_boundary():
-    env=Environment(1,4,network=NetworkConfig(window_slots=1, carrier_group_size=2, hidden_per_edge=1),
+    env=Environment(1,4,network=NetworkConfig(window_slots=1, carrier_group_size=2, hidden_per_edge=1, record_outcomes=True),
                     auto_reset=False)
     env.reset_state[2].fill_(5)
     env.reset()
@@ -149,9 +149,81 @@ def test_hidden_sender_overlap_survives_tick_boundary():
     net.size.zero_()
     env.step(random=False)
     assert net.inbox[0,:,0,0].tolist()==[0,0,1,1]
+    assert net.evaluator["receiver_outcomes"][0,:,0].tolist() == [0,6,1,1]
 
 def test_versioned_network_profile():
     from pathlib import Path
     profile = Path(__file__).resolve().parents[3]/"tools/transport/shared_basic_v1.json"
     config = NetworkConfig.from_profile(profile, fanin=2)
     assert config.ns_per_byte == 148 and config.fanin == 2
+
+
+def test_receiver_dispositions_are_evaluator_only():
+    from flightlib_cuda import ReceiverOutcome as R
+    env = Environment(1, 4, auto_reset=False,
+                      network=NetworkConfig(window_slots=1, range_edges_m=(), record_outcomes=True))
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.size[0,0] = 32
+    net.receivers[0,0] = 14
+    net.erased[0,0] = 2
+    net.loss_after_rx[0,2].fill_(1)
+    net.packet_id[0,0] = 73
+    net.attempt_id[0,0] = 91
+    env.step(random=False)
+    ev = net.evaluator
+    reason = ev["receiver_outcomes"]
+    assert reason[0,:,0].tolist() == [R.NO_EVENT,R.ERASED,R.RESIDUAL_LOSS,R.DELIVERED]
+    assert ev["completed_id"][0,0].item() == 73 and ev["completed_attempt_id"][0,0].item() == 91
+    assert net.inbox[0,:,0,0].tolist() == [0,0,0,1]
+    net.size[0,1] = 32
+    env.step(random=False)
+    assert reason[0,:,0].tolist() == [R.NO_EVENT]+[R.COLLISION]*3
+    net.size[0,1] = 0
+    net.expiry_ns[0,0] = 20000001
+    env.step(random=False)
+    assert reason[0,:,0].tolist() == [R.NO_EVENT]+[R.EXPIRED]*3
+    env.reset()
+    assert reason.count_nonzero().item() == 0
+
+def test_subscription_change_while_frame_is_on_air():
+    from flightlib_cuda import ReceiverOutcome as R
+    net_cfg = NetworkConfig(window_slots=1, dynamic_subscriptions=True, record_outcomes=True)
+    env = Environment(1, 3, auto_reset=False, network=net_cfg)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.sources[0,2,0] = 1
+    net.broadcast[0,0] = 1
+    net.size[0,0] = 100000
+    env.step(random=False)
+    net.sources[0,2,0] = 0
+    net.size.zero_()
+    env.step(random=False)
+    assert net.evaluator["receiver_outcomes"][0,:,0].tolist() == [R.NO_EVENT,R.DELIVERED,R.REBOUND]
+    assert net.inbox[0,:,0,0].tolist() == [0,1,0]
+    net.size[0,0] = 32
+    env.step(random=False)
+    assert net.inbox[0,:,0,0].tolist() == [0,1,1]
+
+
+def test_reset_traces_pending_frame_identity_once():
+    env = Environment(1, 2, auto_reset=False, network=NetworkConfig(window_slots=1, record_outcomes=True))
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    ev = net.evaluator
+    net.size[0,0] = 100000
+    net.broadcast[0,0] = 1
+    net.packet_id[0,0], net.attempt_id[0,0], net.handle[0,0] = 0, 73, 91
+    env.step(random=False)
+    assert ev["admission"][0,0].item() == 1 and ev["completed"][0,0].item() == 0
+    env.reset()
+    assert ev["reset_cancelled"].tolist() == [[1,0]]
+    assert [ev[k][0,0].item() for k in ("cancelled_id", "cancelled_attempt_id", "cancelled_handle")] == [0,73,91]
+    assert ev["last_reset_ns"][0,0].item() > 0
+    env.reset()
+    assert ev["reset_cancelled"].tolist() == [[0,0]]

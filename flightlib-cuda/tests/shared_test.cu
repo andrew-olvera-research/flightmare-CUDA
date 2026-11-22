@@ -57,7 +57,7 @@ void continuation() {
       auto fields = [](const Reception& r) {
         return std::make_tuple(r.id,r.arrival,r.receivers,r.receiver_base,r.completed,r.collided,
                                r.all_peers,r.admission,r.submitted,r.attempt_id,r.handle,r.expired,
-                               r.fixture_label,r.air_start,r.air_end);
+                               r.fixture_label,r.addressed,r.air_start,r.air_end);
       };
       require(fields(row) == fields(ref));
     }
