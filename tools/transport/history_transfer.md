@@ -25,6 +25,8 @@ All comparisons use seeds 22–24 and the existing thresholds in `qualify_outage
 | 5653, October 8–14 and 15–28 | 7,044 and 11,226 | Rejected on each. Two seeds gave p95 four against three in the first window. All matched four in the second but mean delivery error reached 7.8–8.4 points. |
 | 630a, October 8–14 and 15–28 | 7,373 and 13,656 | First window rejected on complete-miss counts. Second window had zero complete misses and insufficient evidence. |
 
+After scoring the final window, we repeated the three October comparisons using local pilots alone. The schedule, kernel, seeds, history length and thresholds were identical. On the final window this reduced predicted complete misses to 203–208 against 178 observed. All supported limits passed, with too few uncensored runs to qualify p95. In the October 8–14 window, two seeds returned to a p95 of three against four observed. October 15–28 continued to qualify. This control isolates sensitivity to borrowing the 5563 calibration. Choosing its weight for a new session remains open.
+
 Five interleaved rounds on an RTX 5070 Ti used eight broadcasters, eight subscriptions per receiver, three 1,000-byte offers per sender per step and 10% loss in both tables. At 1 × 1,000 agents, the history sampler took 147.66 µs median and 161.76 µs p95, versus 147.60 and 161.79 µs for the ordinary sampler. Arena storage rose from 2,479,872 to 8,527,872 bytes. At 100 × 10, both medians were 51.20 µs. These timings exclude calibration and host reads.
 
 ## Reproduce

@@ -115,6 +115,9 @@ if __name__ == "__main__":
         days = read_runs(path, set().union(*windows.values()), digest)
         for name, period in windows.items():
             results[name] = dict(sha256=digest, dates=period, **evaluate(days, period, prior, HISTORY_BITS))
+            if name in ("55e4", "55e4-late-october", "55e4-final"):
+                control = evaluate(days, period, None, HISTORY_BITS)
+                results[name]["local_pilots_only"] = dict(verdict=control["verdict"], seeds=control.get("seeds", {}))
     report = dict(schema=1, fit_link="5563", fit_sha256=DIGEST, fit_dates=dates[:7], history_bits=HISTORY_BITS,
                   block_size=32, pilot_size=8, calibration_blocks=8, comparisons=results)
     args.output.write_text(json.dumps(report, indent=2)+"\n")
