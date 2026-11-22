@@ -79,6 +79,7 @@ __device__ bool resetLane(RuntimeViews v,Inputs in,Index n,ResetSource source){
     const auto& net=v.network;
     auto domain=n/net.group_size;
     if(net.hidden_end.data)for(Offset k=0;k<net.sources.shape[1];++k)net.hidden_end(n,k)=0;
+    if(net.outage_tag.data)for(Offset k=0;k<net.sources.shape[1];++k)net.outage_tag(n,k)=0;
     if(net.history.data)for(Offset k=0;k<net.sources.shape[1];++k)net.history(n,k)=0;
     net.reset_ns(n)=reinterpret_cast<packet::Medium*>(net.media.data)[domain].now;
     for(Offset row=n;row<net.offers.shape[0];row+=v.topology.batch.lanes){
@@ -277,12 +278,53 @@ void launchTask(RuntimeViews v,Inputs in,ResetSource source,StaticScene scene,un
   if(scene.nodes || v.swarm.radius)taskKernel<InlineReset,TerminalReward,true><<<blocks,threads,0,stream>>>(v,in,source,scene);
   else taskKernel<InlineReset,TerminalReward,false><<<blocks,threads,0,stream>>>(v,in,source,scene);
 }
+// A bad period suppresses every eligible reception on this directed subscription.
+__device__ bool receiverOutage(const NetworkBuffers& net, Offset n, Offset k, Offset lane,
+                               Index source, std::uint64_t arrival) {
+  const auto profile = net.outage;
+  const auto good_tag = 2ULL*source + 1;
+  const auto tag = net.outage_tag(n,k);
+  const auto last = net.outage_last_ns(n,k);
+  const bool fresh = !tag || last <= net.reset_ns(lane);
+  const auto epoch = arrival / profile.period_ns;
+  const auto gap = epoch - last / profile.period_ns;
+  bool bad = tag == good_tag + 1;
+  if (fresh || gap) {
+    const float total = profile.enter + profile.recover;
+    const float equilibrium = profile.enter / total;
+    float probability = equilibrium;
+    if (!fresh) {
+      if (gap == 1) probability = bad ? 1-profile.recover : profile.enter;
+      else {
+        const float memory = total == 1 ? 0 : expf(float(gap)*log1pf(-total));
+        probability = equilibrium + (float(bad)-equilibrium)*memory;
+      }
+    }
+    const auto key = mix(net.profile.seed ^ mix(lane) ^ mix(n+0x9e3779b97f4a7c15ULL));
+    const auto bits = mix(key ^ mix(epoch) ^ 0xd1b54a32d192ed03ULL);
+    bad = float(bits >> 40)*(1.f/16777216.f) < probability;
+    net.outage_tag(n,k) = good_tag + bad;
+    if ((fresh || bad) && net.history.data) net.history(n,k)=0;
+  }
+  net.outage_last_ns(n,k) = arrival;
+  return bad;
+}
+
+template<bool Persistent>
 __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Scalar> positions, Index slots){
   Offset edge=Offset(blockIdx.x)*blockDim.x+threadIdx.x;
   Offset fan=net.sources.shape[1], n=edge/fan, k=edge%fan;
   if(n>=net.sources.shape[0])return;
   Index source=net.sources(n,k), receiver=n%slots;
   Offset lanes=net.sources.shape[0], lane=n-receiver+source;
+  if constexpr (Persistent) {
+    const auto tag=net.outage_tag(n,k);
+    if (tag && (tag-1)/2 != source) {
+      net.outage_tag(n,k)=0;
+      if(net.history.data)net.history(n,k)=0;
+      if(net.hidden_end.data)net.hidden_end(n,k)=0;
+    }
+  }
   Offset band=0;
   if(net.history.data && source<slots){
     float squared=0;
@@ -307,6 +349,9 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
       if(net.hidden_end(n,k)==r.air_end)continue;
     }
     if(r.submitted<net.reset_ns(n) || !packet::receivedBy(r,source,receiver,slots))continue;
+    if constexpr (Persistent) {
+      if(receiverOutage(net,n,k,lane,source,r.arrival))continue;
+    }
     if(net.history.data){
       auto last=net.history(n,k);
       bool missed=last==2ULL*source+2;
@@ -368,7 +413,10 @@ void environmentLaunch(const RuntimeViews& v,cudaStream_t stream,const std::vect
         reinterpret_cast<packet::Sender*>(net.senders.data),reinterpret_cast<packet::Reception*>(net.results.data),
         stream,v.topology.active.data,net.offsets.shape[0],net.offsets.data);
     Offset edges=net.sources.shape[0]*net.sources.shape[1];
-    collectPackets<<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,v.state.x,batch.slots_per_environment);
+    if(net.outage.period_ns)
+      collectPackets<true><<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,v.state.x,batch.slots_per_environment);
+    else
+      collectPackets<false><<<(edges+127)/128,128,0,stream>>>(net,v.topology.active.data,v.state.x,batch.slots_per_environment);
   }
   if(v.sensor_truth.samples.data)detail::launchSensors(v,stream,first);
   if(first||ctx.execution==TaskExecution::FusedReset)

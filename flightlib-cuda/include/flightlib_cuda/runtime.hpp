@@ -41,6 +41,9 @@ struct AllocationPlan {
   Offset payload_bytes{};
   Offset arena_bytes{}; // Includes 256-byte field alignment.
 };
+// Transition probabilities per simulation-clock period. A zero period disables outages.
+struct OutageProfile { Index period_ns{}; Scalar enter{}, recover{}; };
+
 struct RuntimeConfig {
   Index environments{1};
   Index slots{1};
@@ -65,6 +68,7 @@ struct RuntimeConfig {
   Index carrier_group_size{}, hidden_per_edge{};
   bool network_sample_loss{};
   std::vector<Scalar> network_range_edges;
+  OutageProfile outage{};
 };
 
 struct SwarmCollision {
@@ -87,6 +91,8 @@ struct NetworkBuffers {
   Vector<Scalar> range_edges;
   TensorView<Scalar,3> loss_after_rx, loss_after_miss;
   Matrix<std::uint64_t> history;
+  Matrix<std::uint64_t> outage_tag, outage_last_ns;
+  OutageProfile outage{};
   packet::SharedProfile profile{};
   Index tick_ns{};
 };

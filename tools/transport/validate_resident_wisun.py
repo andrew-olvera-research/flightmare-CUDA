@@ -60,12 +60,12 @@ def describe(runs):
                 miss_after_reception_pairs=pairs[False, True], loss_run_histogram=dict(lengths))
 
 
-def simulate(lengths, after_rx, after_miss, seed):
+def simulate(lengths, after_rx, after_miss, seed, outage=None):
     # One independent two-station environment per uninterrupted counter run.
     # Only run lengths reach the simulator. The three offsets encode ordering;
     # time on this synthetic schedule has no physical delay interpretation.
     config = NetworkConfig(window_slots=1, offsets_ns=(0, 100000, 200000),
-                           range_edges_m=(), seed=seed)
+                           range_edges_m=(), seed=seed, **(outage or {}))
     env = Environment(len(lengths), 2, control_dt=.001, auto_reset=False, network=config)
     net = env.network
     env.reset_state[2].fill_(5)

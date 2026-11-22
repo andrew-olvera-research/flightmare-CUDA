@@ -201,6 +201,12 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
     throw std::invalid_argument("invalid packet submission offsets");
   const Offset rows=multiply(B,segments);
   const Offset bins=B && config.network_sample_loss ? config.network_range_edges.size()+1:0;
+  const auto& outage = config.outage;
+  if (!std::isfinite(outage.enter) || !std::isfinite(outage.recover) ||
+      outage.enter < 0 || outage.recover < 0 || outage.enter + outage.recover > 1 ||
+      (outage.period_ns ? (!B || outage.enter + outage.recover == 0)
+                        : (outage.enter != 0 || outage.recover != 0)))
+    throw std::invalid_argument("invalid receiver outage period or transition probabilities");
   Scalar previous=0;
   for(auto distance:config.network_range_edges){
     if(!std::isfinite(distance) || distance<=previous)throw std::invalid_argument("invalid distance bands");
@@ -244,6 +250,7 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.swarm.terminate=config.terminate_on_agent_collision;
   s->views.network.group_size=config.carrier_group_size?config.carrier_group_size:config.slots;
   s->views.network.profile=config.shared_profile;
+  s->views.network.outage=config.outage;
   s->views.network.tick_ns=config.network_tick_ns;
   s->views.sensor_step_ns=config.sensor_step_ns;
   s->views.imu.settings=config.imu;

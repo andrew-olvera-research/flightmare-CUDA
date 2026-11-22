@@ -143,6 +143,9 @@ struct NativeEnvironment {
         c.network_sample_loss=true;
         c.network_range_edges=network["range_edges_m"].cast<std::vector<Scalar>>();
       }
+      if(network.contains("outage_period_ns"))
+        c.outage={network["outage_period_ns"].cast<Index>(),network["outage_enter"].cast<Scalar>(),
+                  network["outage_recover"].cast<Scalar>()};
       c.network_offsets=network["offsets_ns"].cast<std::vector<Index>>();
       if(!c.network_fanin)throw std::invalid_argument("network requires positive receiver fanin");
       c.shared_profile={network["slot_ns"].cast<Index>(),network["window_slots"].cast<Index>(),

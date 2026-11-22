@@ -77,3 +77,56 @@ def test_independent_slot_clock():
                         f"segment={segment} sender={sender} receiver={receiver} "
                         f"expected={event} actual={actual}"
                     )
+
+
+def test_persistent_receiver_across_clock_gaps_and_resets():
+    # Two offers per period must observe the same latent state. Advance the CPU
+    # probabilities one period at a time across idle gaps, independently of CUDA.
+    cfg = NetworkConfig(window_slots=1, offsets_ns=(0, 200000), outage_period_ns=1000000,
+                        outage_enter=.125, outage_recover=.25)
+    env = Environment(32, 3, control_dt=.001, auto_reset=False, network=cfg)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    bad = [None] * 32
+    last_tick = [None] * 32
+    mask = 2**64-1
+
+    def mix(x):
+        for shift, factor in ((30, 0xbf58476d1ce4e5b9), (27, 0x94d049bb133111eb)):
+            x = ((x ^ (x >> shift))*factor) & mask
+        return x ^ (x >> 31)
+
+    env.capture(random=False)
+    for tick in range(20):
+        source = 1 if 8 <= tick < 12 else 0
+        net.sources.fill_(source)
+        net.size.zero_()
+        net.broadcast.fill_(1)
+        if tick not in (2, 3, 4, 8, 9):
+            net.size[:, :, source].fill_(32)
+        if tick == 14:
+            env.selected.zero_()
+            env.selected[2] = 1  # receiver in env 0
+            env.selected[3] = 1  # sender in env 1
+            env.reset()
+            net.size[:, :, source].fill_(32)
+            net.broadcast.fill_(1)
+            bad[:2] = [None, None]
+        if tick in (8, 12):
+            bad = [None] * 32
+        env.step(graph=True, random=False)
+        actual = net.inbox[:, :, 2, 0, 0].tolist()
+        if tick in (2, 3, 4, 8, 9):
+            assert not any(actual[0]) and not any(actual[1])
+            continue
+        for e in range(32):
+            p = cfg.outage_enter / (cfg.outage_enter + cfg.outage_recover)
+            if bad[e] is not None:
+                p = float(bad[e])
+                for _ in range(tick-last_tick[e]):
+                    p = p*(1-cfg.outage_recover) + (1-p)*cfg.outage_enter
+            key = mix(cfg.seed ^ mix(3*e+source) ^ mix(3*e+2+0x9e3779b97f4a7c15))
+            bad[e] = (mix(key ^ mix(tick) ^ 0xd1b54a32d192ed03) >> 40)/2**24 < p
+            last_tick[e] = tick
+            assert actual[0][e] == actual[1][e] == int(not bad[e]), (tick, e, source)

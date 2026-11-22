@@ -205,6 +205,9 @@ class NetworkConfig:
     preamble_ns: int = 32000
     recovery_ns: int = 72000
     seed: int = 22
+    outage_period_ns: int = 0
+    outage_enter: float = 0.0
+    outage_recover: float = 0.0
 
     @classmethod
     def from_profile(cls, path, **workspace):

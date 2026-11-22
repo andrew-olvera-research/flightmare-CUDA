@@ -20,7 +20,7 @@ def fortnight(month):
     return [(date(2019, month, 1) + timedelta(days=i)).isoformat() for i in range(14)]
 
 
-def read_numbered_bursts(path, days):
+def read_numbered_bursts(path, days, min_periods=720):
     if hashlib.sha256(path.read_bytes()).hexdigest() != DIGEST:
         raise ValueError("unexpected source SHA-256")
     periods = defaultdict(dict)
@@ -42,8 +42,8 @@ def read_numbered_bursts(path, days):
         if any(witness for _, witness in reps.values()):
             mask = sum(1 << rep for rep, (rx, _) in reps.items() if rx)
             result[day].append((counter, mask))
-    if any(len(values) < 720 for values in result.values()):
-        raise ValueError("insufficient coverage: need 720 witnessed periods per day")
+    if any(len(values) < min_periods for values in result.values()):
+        raise ValueError(f"insufficient coverage: need {min_periods} witnessed periods per day")
     return result
 
 
