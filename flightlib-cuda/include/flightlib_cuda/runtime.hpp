@@ -69,6 +69,7 @@ struct RuntimeConfig {
   bool network_edge_outage_rates{}, network_sample_loss{}, network_record_outcomes{}, network_dynamic_subscriptions{};
   std::vector<Scalar> network_range_edges;
   OutageProfile outage{};
+  Index network_loss_history_bits{};
 };
 
 struct SwarmCollision {
@@ -95,6 +96,9 @@ struct NetworkBuffers {
   Matrix<Index> bound_source;
   Matrix<std::uint64_t> bound_since_ns;
   Matrix<std::uint64_t> history;
+  TensorView<Scalar,3> context_loss; // One history tree per submission offset.
+  Matrix<std::uint64_t> context_last_ns;
+  Index context_mask{};
   TensorView<Scalar,3> outage_rates;
   Matrix<std::uint64_t> outage_tag, outage_last_ns;
   OutageProfile outage{};

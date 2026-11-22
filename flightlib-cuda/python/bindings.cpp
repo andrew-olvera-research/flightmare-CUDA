@@ -139,6 +139,7 @@ struct NativeEnvironment {
       c.carrier_group_size=network["carrier_group_size"].cast<Index>();
       c.hidden_per_edge=network["hidden_per_edge"].cast<Index>();
       c.network_fanin=network["fanin"].cast<Index>();
+      if(network.contains("loss_history_bits"))c.network_loss_history_bits=network["loss_history_bits"].cast<Index>();
       if(!network["range_edges_m"].is_none()){
         c.network_sample_loss=true;
         c.network_range_edges=network["range_edges_m"].cast<std::vector<Scalar>>();

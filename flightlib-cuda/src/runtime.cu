@@ -202,6 +202,10 @@ AllocationPlan Simulation::plan(const RuntimeConfig& config) {
   const Offset rows=multiply(B,segments);
   const Offset bins=B && config.network_sample_loss ? config.network_range_edges.size()+1:0;
   const auto& outage = config.outage;
+  const auto bits = config.network_loss_history_bits;
+  if(bits > 8 || (bits && (!B || bins || outage.period_ns)))
+    throw std::invalid_argument("context loss requires 1-8 history bits and its own receiver loss profile");
+  const Offset context_columns = bits ? multiply(segments, (2u << bits)-1u) : 0;
   if ((config.network_edge_outage_rates && !outage.period_ns) || !std::isfinite(outage.enter) || !std::isfinite(outage.recover) ||
       outage.enter < 0 || outage.recover < 0 || outage.enter > 1 || outage.recover > 1 ||
       (outage.period_ns ? (!B || outage.enter + outage.recover == 0)
@@ -253,6 +257,7 @@ Simulation::Simulation(const RuntimeConfig& config) {
   s->views.network.profile=config.shared_profile;
   s->views.network.outage=config.outage;
   s->views.network.tick_ns=config.network_tick_ns;
+  s->views.network.context_mask=(1u<<config.network_loss_history_bits)-1u;
   s->views.sensor_step_ns=config.sensor_step_ns;
   s->views.imu.settings=config.imu;
   s->views.odometry.settings=config.odometry;

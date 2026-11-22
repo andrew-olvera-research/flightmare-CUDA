@@ -7,6 +7,62 @@ import torch
 from flightlib_cuda import Environment, NetworkConfig
 
 
+def test_offset_and_recent_packet_history_in_graph():
+    config = NetworkConfig(offsets_ns=(0, 200000), window_slots=1, loss_history_bits=3)
+    env = Environment(2, 2, network=config, control_dt=.001, auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    rng = random.Random(41)
+    table = [[rng.randrange(2) for _ in range(15)] for _ in range(2)]
+    net.context_loss.copy_(torch.tensor(table, device=env.device).expand_as(net.context_loss))
+    env.capture(random=False)
+    histories = [[], []]
+    for tick in range(12):
+        if tick in (3, 7):
+            # Reset just the sender, then just the receiver in environment zero.
+            env.selected.zero_()
+            env.selected[int(tick == 7)] = 1
+            env.reset()
+            histories[0].clear()
+        net.sources.zero_()
+        net.size[:, :, 0].fill_(32)
+        net.broadcast[:, :, 0].fill_(1)
+        env.step(graph=True, random=False)
+        got = net.inbox[:, :, 1, 0, 0].tolist()
+        for ordinal in range(2):
+            for lane, history in enumerate(histories):
+                value = 0
+                for bit in history[-3:]:
+                    value = 2*value + bit
+                loss = table[ordinal][(1 << min(3, len(history))) - 1 + value]
+                assert got[ordinal][lane] == 1-loss
+                history.append(loss)
+
+
+def test_loss_context_follows_queued_submission_offset():
+    config = NetworkConfig(offsets_ns=(0, 200000), window_slots=1, loss_history_bits=1)
+    env = Environment(1, 2, network=config, control_dt=.001, auto_reset=False)
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    net.sources.zero_()
+    net.broadcast.fill_(1)
+    net.context_loss[..., 0, :].fill_(1)
+    net.context_loss[..., 1, :].zero_()
+    # Both frames finish in a later segment than the one in which they were offered.
+    net.size[0, 0, 0] = 2000
+    env.step(random=False)
+    assert net.evaluator["completed"][1, 0, 0].item() == 1
+    assert net.inbox[1, 0, 1, 0, 0].item() == 0
+    net.size.zero_()
+    net.size[1, 0, 0] = 5500
+    env.step(random=False)
+    net.size.zero_()
+    env.step(random=False)
+    assert net.inbox[0, 0, 1, 0, 0].item() == 1
+
+
 def draw(sender, sequence, seed, window):
     mask = 2**64-1
     x = (sender + (seed << 32) + sequence*0x9e3779b97f4a7c15) & mask

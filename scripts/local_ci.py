@@ -197,7 +197,13 @@ def network_check(lane, runner, cuda_options):
             runner.run('session-' + label, [CUDA_PYTHON, 'tools/transport/qualify_probe.py',
                        str(Path(cache) / 'data_5563.csv'), *flags, '--output',
                        str(runner.directory / f'session-{label}.json')], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('history-transfer', [CUDA_PYTHON, 'tools/transport/qualify_history.py', cache,
+                   '--output', str(runner.directory / 'history-transfer.json'), '--require-case', '5563',
+                   '--require-case', '55e4', '--require-case', '55e4-late-october'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-performance':
+        runner.run('history-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--triplets',
+                   '--senders', '1', '8'], env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--senders', '1', '4', '8'],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
         runner.run('per-sender-service', [CUDA_PYTHON, 'tools/transport/compare_contention.py',

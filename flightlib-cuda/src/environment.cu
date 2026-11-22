@@ -373,7 +373,7 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
     }
   }
   Offset band=0;
-  if(net.history.data && source<slots){
+  if(net.loss_after_rx.data && source<slots){
     float squared=0;
     for(unsigned axis=0;axis<3;++axis){
       float d=positions(axis,n)-positions(axis,lane);squared+=d*d;
@@ -414,12 +414,29 @@ __global__ void collectPackets(NetworkBuffers net, const Mask* active, Matrix<Sc
     }
     if(net.history.data){
       auto last=net.history(n,k);
-      bool missed=last==2ULL*source+2;
-      float probability=(missed?net.loss_after_miss:net.loss_after_rx)(n,k,band);
+      Index node=0;
+      float probability;
+      if(net.context_loss.data){
+        if((last>>32)==source+1ULL && net.context_last_ns(n,k)>net.reset_ns(lane))
+          node=static_cast<Index>(last);
+        // A queued transmission can finish at a different offset from its offer.
+        const auto submitted_offset=r.submitted%net.tick_ns;
+        Offset ordinal=0;
+        while(ordinal+1<net.offsets.shape[0] && net.offsets(ordinal+1)<=submitted_offset)++ordinal;
+        probability=net.context_loss(n,k,ordinal*(2ULL*net.context_mask+1)+node);
+      }else{
+        bool missed=last==2ULL*source+2;
+        probability=(missed?net.loss_after_miss:net.loss_after_rx)(n,k,band);
+      }
       auto key=mix(net.profile.seed ^ mix(lane) ^ mix(n+0x9e3779b97f4a7c15ULL));
       auto bits=mix(key ^ mix(r.attempt_id) ^ mix(r.id+1) ^ mix(r.submitted));
       bool drop=!(probability>=0 && probability<=1) || float(bits>>40)*(1.f/16777216.f)<probability;
-      net.history(n,k)=2ULL*source+1+drop;
+      if(net.context_loss.data){
+        const auto mask=net.context_mask;
+        const auto next=node<mask ? 2*node+1+drop : mask+((2*(node-mask)+drop)&mask);
+        net.history(n,k)=((source+1ULL)<<32)|next;
+        net.context_last_ns(n,k)=r.arrival;
+      }else net.history(n,k)=2ULL*source+1+drop;
       if(drop){
         if(cause)*cause=ResidualLoss;
         continue;

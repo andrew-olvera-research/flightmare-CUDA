@@ -60,12 +60,14 @@ def describe(runs):
                 miss_after_reception_pairs=pairs[False, True], loss_run_histogram=dict(lengths))
 
 
-def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, rates=None, causes=None):
+def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, rates=None, causes=None,
+             history_bits=0, context_tables=None):
     # One independent two-station environment per uninterrupted counter run.
     # Only run lengths reach the simulator. The three offsets encode ordering;
     # time on this synthetic schedule has no physical delay interpretation.
     config = NetworkConfig(window_slots=1, offsets_ns=(0, 100000, 200000),
-                           range_edges_m=(), seed=seed, edge_outage_rates=conditions is not None,
+                           range_edges_m=None if history_bits else (), loss_history_bits=history_bits,
+                           seed=seed, edge_outage_rates=conditions is not None,
                            record_outcomes=causes is not None, **(outage or {}))
     env = Environment(len(lengths), 2, control_dt=.001, auto_reset=False, network=config)
     net = env.network
@@ -75,8 +77,11 @@ def simulate(lengths, after_rx, after_miss, seed, outage=None, conditions=None, 
         net.sources.zero_()
         net.size[:, :, 0].fill_(32)
         net.broadcast[:, :, 0].fill_(1)
-        net.loss_after_rx.fill_(after_rx)
-        net.loss_after_miss.fill_(after_miss)
+        if history_bits:
+            net.context_loss[:, 1, 0].copy_(torch.tensor(context_tables, device=env.device))
+        else:
+            net.loss_after_rx.fill_(after_rx)
+            net.loss_after_miss.fill_(after_miss)
     if conditions is not None:
         if list(map(len, conditions)) != lengths:
             raise ValueError("probe conditions must cover the entire offered schedule")

@@ -23,6 +23,21 @@ TRANSFER_LINKS = {"55e4": "2126dc5967f49c3261ec01e169d4aba319b0d42cd3fd904feee64
                   "560b": "b3e62341e2ace2af53c807295fa7fab2f567c3e97be4a7d8ae2dd8fd8515cf95"}
 
 
+def fetch_link(path, digest):
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with urlopen(f"https://raw.githubusercontent.com/wine-uoc/wisun_traces/{REVISION}/{path.name}",
+                 timeout=60) as stream:
+        data = stream.read()
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError(f"unexpected SHA-256 for {path.name}")
+    with tempfile.TemporaryDirectory(dir=path.parent) as scratch:
+        temporary = Path(scratch)/path.name
+        temporary.write_bytes(data)
+        temporary.replace(path)
+
+
 def read_runs(path, dates, digest=DIGEST, signal=None):
     if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
         raise ValueError("unexpected Wi-SUN capture")
@@ -341,16 +356,8 @@ if __name__ == "__main__":
             links = TRANSFER_LINKS
         for link, digest in links.items():
             path = args.csv.with_name(f"data_{link}.csv")
-            if args.download and not path.exists():
-                with urlopen(f"https://raw.githubusercontent.com/wine-uoc/wisun_traces/{REVISION}/{path.name}",
-                             timeout=60) as stream:
-                    data = stream.read()
-                if hashlib.sha256(data).hexdigest() != digest:
-                    raise ValueError("unexpected download")
-                with tempfile.TemporaryDirectory(dir=path.parent) as scratch:
-                    temporary = Path(scratch)/path.name
-                    temporary.write_bytes(data)
-                    temporary.replace(path)
+            if args.download:
+                fetch_link(path, digest)
             if args.session_transfer:
                 report[link] = dict(sha256=digest, fit_link="5563", fit_dates=october[:7],
                                     **evaluate_local(read_runs(path, set(october[7:]), digest),

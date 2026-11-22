@@ -14,11 +14,14 @@ def measure(domains, stations, mode, senders=1, fanin=None):
     loaded = mode in ("loaded-fixed", "loaded-ack")
     acknowledged = mode in ("loaded-ack", "unicast-ack")
     unicast = loaded or mode in ("unicast-fixed", "unicast-cw", "unicast-ack")
-    sampled = mode in ("sampled", "sampled-loss") or persistent
+    triplets = mode in ("triplet-sampled", "triplet-context")
+    sampled = mode in ("sampled", "sampled-loss", "triplet-sampled") or persistent
     outage = dict(outage_period_ns=10000000, outage_enter=.05, outage_recover=.45) if persistent else {}
     net_config = None if mode == "plant" else NetworkConfig(fanin=fanin, range_edges_m=() if sampled else None,
                                                             edge_outage_rates=mode == "edge-rates",
-                                                            offsets_ns=tuple(range(0,1000000,100000)) if loaded else (0,),
+                                                            loss_history_bits=5 if mode == "triplet-context" else 0,
+                                                            offsets_ns=(0, 3000000, 6000000) if triplets else
+                                                            tuple(range(0,1000000,100000)) if loaded else (0,),
                                                             unicast_ack_backoff=acknowledged or mode == "unicast-cw",
                                                             unicast_success_hold_ns=46000 if acknowledged else 0,
                                                             unicast_failed_hold_ns=41000 if acknowledged else 0,
@@ -29,9 +32,11 @@ def measure(domains, stations, mode, senders=1, fanin=None):
     if env.network:
         net=env.network
         net.sources.copy_(torch.arange(fanin, device=env.device).expand_as(net.sources))
-        if mode == "sampled-loss":
+        if mode in ("sampled-loss", "triplet-sampled"):
             net.loss_after_rx.fill_(.1)
             net.loss_after_miss.fill_(.1)
+        if mode == "triplet-context":
+            net.context_loss.fill_(.1)
         if mode == "edge-rates":
             net.outage_rates[...,0].fill_(.05)
             net.outage_rates[...,1].fill_(.45)
@@ -94,6 +99,7 @@ if __name__=="__main__":
     parser.add_argument("--senders", type=int, nargs="+", default=[1])
     parser.add_argument("--session-service", action="store_true",
                         help="compare resident edge rates and acknowledged unicast against their matched controls")
+    parser.add_argument("--triplets", action="store_true", help="compare loss samplers on identical three-offset traffic")
     args=parser.parse_args()
     if min(args.senders) < 1 or max(args.senders) > 1000 or args.rounds < 1:
         parser.error("positive rounds and 1 to 1000 senders required")
@@ -101,7 +107,10 @@ if __name__=="__main__":
     cases = []
     for e, s in ((1,1),(1,100),(1,1000),(100,10)):
         counts = sorted({n for n in args.senders if n <= s})
-        if args.session_service:
+        if args.triplets:
+            if s in (10,1000):
+                cases.extend((e,s,mode,n,n) for n in counts for mode in ("triplet-sampled","triplet-context"))
+        elif args.session_service:
             if s in (10,1000):
                 cases.extend((e,s,m,n,n) for n in counts for m in
                              ("persistent","edge-rates","unicast-fixed","unicast-cw","unicast-ack","loaded-fixed","loaded-ack"))

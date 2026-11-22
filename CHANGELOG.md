@@ -5,6 +5,7 @@
 - Add shared airtime, broadcast, bounded sender service, sparse receiver subscriptions and optional persistent packet loss to the batched GPU step.
 - Qualify declared packet profiles against Wi-SUN captures and ns-3. See [measured limits and application freshness](tools/transport/session_service.md) before selecting a downstream profile.
 - Correct the Hawthorns transmitter match and qualify broadcast receiver counts on a same-channel held-out drive. [Mobile broadcast results](tools/transport/v041_fidelity.md)
+- Add opt-in offset-specific packet loss conditioned on recent receiver outcomes. Cross-session outage prediction remains limited to the measured profiles. [Qualification results](tools/transport/history_transfer.md)
 
 ## 0.3.0 — simulator-focused layout
 

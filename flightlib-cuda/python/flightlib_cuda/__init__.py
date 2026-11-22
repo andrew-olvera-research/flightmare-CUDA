@@ -214,6 +214,7 @@ class NetworkConfig:
     unicast_ack_backoff: bool = False
     unicast_success_hold_ns: int = 0
     unicast_failed_hold_ns: int = 0
+    loss_history_bits: int = 0
 
     @classmethod
     def from_profile(cls, path, **workspace):
@@ -276,6 +277,9 @@ class Network:
                                      "cancelled_handle", "last_reset_ns")):
                 self.evaluator[key] = cancellations[..., i]
         self.sources = borrow("sources").view(environments, slots, fanin)
+        if config.loss_history_bits:
+            nodes = (2 << config.loss_history_bits) - 1
+            self.context_loss = borrow("context_loss").view(environments, slots, fanin, len(config.offsets_ns), nodes)
         if config.edge_outage_rates:
             self.outage_rates = borrow("outage_rates").view(environments, slots, fanin, 2)
         if config.hidden_per_edge:
