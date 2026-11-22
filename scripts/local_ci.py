@@ -149,7 +149,7 @@ def network_check(lane, runner, cuda_options):
     targets = {'network-parity': ['packet_test', '_native'],
                'network-api': ['packet_test', 'shared_test', '_native'],
                'network-health': ['packet_test', '_native'], 'network-performance': ['_native'],
-               'network-fidelity': ['packet_test', 'shared_test'],
+               'network-fidelity': ['packet_test', 'shared_test', '_native'],
                'network-sanitize': ['packet_test', 'shared_test']}
     runner.cmake('network', 'flightlib-cuda', build,
                  ['-DBUILD_TESTING=ON', '-DFLIGHTLIB_CUDA_TEST_DEVICE=ON',
@@ -169,8 +169,14 @@ def network_check(lane, runner, cuda_options):
         cache = os.environ.get('FLIGHTMARE_MEASUREMENT_CACHE', '/build/network-measurements')
         runner.run('measured-network', [sys.executable, 'tools/transport/check_fidelity.py',
                    '--build', build, '--cache', cache, '--output', str(runner.directory)])
+        runner.run('resident-wisun', [CUDA_PYTHON, 'tools/transport/validate_resident_wisun.py',
+                   str(Path(cache) / 'data_5563.csv'), '--output', str(runner.directory / 'resident-wisun.json')],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     elif lane == 'network-performance':
-        runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py'],
+        runner.run('resident-step', [CUDA_PYTHON, 'tools/transport/bench_resident.py', '--senders', '1', '4', '8'],
+                   env=dict(os.environ, PYTHONPATH=f'{build}/python'))
+        runner.run('per-sender-service', [CUDA_PYTHON, 'tools/transport/compare_contention.py',
+                   '--output', str(runner.directory / 'contention.json')],
                    env=dict(os.environ, PYTHONPATH=f'{build}/python'))
     else:
         network_native(runner, lane, build)

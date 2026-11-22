@@ -241,9 +241,11 @@ class Network:
         self.evaluator = {
             key: results[:, offset:offset+dtype.itemsize].view(dtype).view(shape)
             for key, offset, dtype in zip(
-                ("admission","completed","collided","expired","completed_handle","fixture_label"),
+                ("admission","completed","collided","expired","completed_handle","fixture_label",
+                 "submitted_ns","air_start_ns","air_end_ns"),
                 _native.completion_offsets,
-                (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64, torch.uint32))
+                (torch.uint32, torch.uint8, torch.uint8, torch.uint8, torch.int64, torch.uint32,
+                 torch.int64, torch.int64, torch.int64))
         }
         self.sources = borrow("sources").view(environments, slots, fanin)
         if config.hidden_per_edge:

@@ -108,6 +108,9 @@ def test_timestamped_offers_with_expiry_and_opaque_handle():
     net.expiry_ns[1,0,0] = 1_000_100
     env.capture(random=False)
     env.step(graph=True, random=False)
+    assert net.evaluator["submitted_ns"][:,0,0].tolist() == list(config.offsets_ns)
+    assert net.evaluator["air_start_ns"][:,0,0].tolist() == list(config.offsets_ns)
+    assert net.evaluator["air_end_ns"][:,0,0].tolist() == [offset + 46800 for offset in config.offsets_ns]
     assert net.evaluator["completed_handle"][:,0,0].tolist() == [42,42,42]
     assert net.evaluator["fixture_label"][:,0,0].tolist() == [0,0,7]
     assert net.evaluator["expired"][:,0,0].tolist() == [0,1,0]

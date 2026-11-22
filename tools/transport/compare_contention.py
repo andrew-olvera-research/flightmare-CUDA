@@ -1,0 +1,61 @@
+"""Public GPU common-sink unicast diagnostic for the controlled ns-3 comparison."""
+import argparse
+import json
+from pathlib import Path
+
+import torch
+from flightlib_cuda import Environment, NetworkConfig
+
+
+def measure(senders, seed):
+    # 1000-byte offers every 100 us. Each 1 ms plant tick contains ten offers per sender.
+    offsets = tuple(range(0, 1000000, 100000))
+    env = Environment(1, senders + 1, control_dt=.001, auto_reset=False,
+                      network=NetworkConfig(offsets_ns=offsets, fanin=senders, seed=seed))
+    env.reset_state[2].fill_(5)
+    env.reset()
+    net = env.network
+    with env.access():
+        net.sources.copy_(torch.arange(senders, device=env.device).expand_as(net.sources))
+        net.size[:, 0, :senders].fill_(1000)
+        net.receivers[:, 0, :senders].fill_(1 << senders)
+    env.capture(random=False)
+    for _ in range(100):
+        env.step(graph=True, random=False)
+
+    ticks = 1000
+    ev = net.evaluator
+    waits = torch.empty((ticks, len(offsets), senders), device=env.device, dtype=torch.int64)
+    counts = torch.zeros((4, senders), device=env.device, dtype=torch.int64)
+    for tick in range(ticks):
+        env.step(graph=True, random=False)
+        with env.access():
+            complete = ev["completed"][:, 0, :senders].bool()
+            admission = ev["admission"][:, 0, :senders]
+            waits[tick] = torch.where(complete, ev["air_start_ns"][:, 0, :senders] -
+                                      ev["submitted_ns"][:, 0, :senders], -1)
+            counts[0] += (admission == 1).sum(0)
+            counts[1] += (admission == 2).sum(0)
+            counts[2] += ev["collided"][:, 0, :senders].sum(0)
+            counts[3] += net.inbox[:, 0, senders, :, 0].sum(0)
+    per_sender = []
+    waits = waits.cpu()
+    for sender, (accepted, rejected, collided, delivered) in enumerate(counts.T.tolist()):
+        values = waits[:, :, sender].flatten()
+        values = values[values >= 0].float()
+        if (accepted + rejected != ticks * len(offsets) or
+                len(values) != collided + delivered or abs(accepted - len(values)) > 1):
+            raise RuntimeError(f"sender {sender} offer/completion accounting failed")
+        per_sender.append(dict(sender=sender, accepted=accepted, full=rejected,
+                               completed=len(values), collisions=collided, delivered=delivered,
+                               wait_ns_p50_p95=torch.quantile(values, torch.tensor([.5,.95])).tolist()))
+    return dict(senders=senders, seed=seed, seconds=1, packet_bytes=1000, interval_us=100,
+                goodput_mbps=sum(row["delivered"] for row in per_sender)*.008, per_sender=per_sender)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+    results = [measure(n, seed) for n in (1, 4, 8) for seed in (22, 23, 24)]
+    args.output.write_text(json.dumps(results, indent=2) + "\n")

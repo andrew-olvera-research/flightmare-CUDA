@@ -20,7 +20,7 @@ def fortnight(month):
     return [(date(2019, month, 1) + timedelta(days=i)).isoformat() for i in range(14)]
 
 
-def read_bursts(path, days):
+def read_numbered_bursts(path, days):
     if hashlib.sha256(path.read_bytes()).hexdigest() != DIGEST:
         raise ValueError("unexpected source SHA-256")
     periods = defaultdict(dict)
@@ -36,14 +36,20 @@ def read_bursts(path, days):
             periods[key][rep] = (bool(row["fsk_rssi"]),
                                  bool(row["oqpsk_rssi"] or row["ofdm_rssi"]))
     result = {day: [] for day in days}
-    for (day, _), reps in sorted(periods.items()):
+    for (day, counter), reps in sorted(periods.items()):
         # Independent witness of an active measurement period. Exclude FSK-only
         # periods symmetrically, regardless of their FSK reception pattern.
         if any(witness for _, witness in reps.values()):
-            result[day].append(sum(1 << rep for rep, (rx, _) in reps.items() if rx))
+            mask = sum(1 << rep for rep, (rx, _) in reps.items() if rx)
+            result[day].append((counter, mask))
     if any(len(values) < 720 for values in result.values()):
         raise ValueError("insufficient coverage: need 720 witnessed periods per day")
     return result
+
+
+def read_bursts(path, days):
+    return {day: [mask for _, mask in periods]
+            for day, periods in read_numbered_bursts(path, days).items()}
 
 
 def distribution(values):

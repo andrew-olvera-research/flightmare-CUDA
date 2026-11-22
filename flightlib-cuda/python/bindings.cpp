@@ -238,7 +238,8 @@ PYBIND11_MODULE(_native,m){
       offsetof(Frame,receiver_base),offsetof(Frame,bytes),offsetof(Frame,all_peers),offsetof(Frame,attempt_id),offsetof(Frame,handle),offsetof(Frame,expiry_ns),offsetof(Frame,fixture_label));
   using flightlib_cuda::packet::Reception;
   m.attr("completion_offsets")=py::make_tuple(offsetof(Reception,admission),offsetof(Reception,completed),
-      offsetof(Reception,collided),offsetof(Reception,expired),offsetof(Reception,handle),offsetof(Reception,fixture_label));
+      offsetof(Reception,collided),offsetof(Reception,expired),offsetof(Reception,handle),offsetof(Reception,fixture_label),
+        offsetof(Reception,submitted),offsetof(Reception,air_start),offsetof(Reception,air_end));
   m.def("profile_start",[]{if(cudaProfilerStart()!=cudaSuccess)throw std::runtime_error("profiler start failed");});
   m.def("profile_stop",[]{if(cudaProfilerStop()!=cudaSuccess)throw std::runtime_error("profiler stop failed");});
   py::class_<ModelConfig>(m,"ModelConfig").def(py::init<>())
