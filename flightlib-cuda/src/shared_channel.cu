@@ -50,6 +50,9 @@ __device__ bool interval(unsigned n, unsigned dt, SharedProfile p, Medium* media
     r.admission = Admission::Accepted;
   }
   __syncthreads();
+  // All waiting senders count down the same idle slots. Senders that start in
+  // the same slot collide. The longest frame plus recovery sets the next slot.
+  // That slot time and each sender's remaining backoff carry across intervals.
   while (m.next_slot < end) {
     if (!threadIdx.x) { minimum = UINT32_MAX; contenders = 0; longest = 0; }
     __syncthreads();
