@@ -2,9 +2,29 @@
 
 A GPU quadrotor simulator for flying many aircraft in one world or running thousands of independent racing environments. It preserves Flightmare's motor model, body-rate controller and rigid-body RK4 integration. State, swept collision queries, packet-level communications, sampled sensors and optional FPV cameras stay on device and can share a CUDA graph with your policy.
 
+## Run the standalone simulator
+
+From the checkout, use Docker Compose with an NVIDIA GPU accessible to Linux containers. The example steps six aircraft with two different masses, resets one aircraft, and prints the final altitudes.
+
+```sh
+docker compose up -d --build dev
+docker compose exec -T dev bash scripts/install-headless.sh
+docker compose exec -T dev /build/flightlib-cuda-python/bin/python flightlib-cuda/python/examples/core.py
+```
+
+Use `Core` for a custom controller or `Environment` for observations, rewards, contacts, sensors and packet networking. For rollout collection and PPO, pass `--with-rl` to the installer. [Six-aircraft example](flightlib-cuda/python/examples/core.py) · [Simulation interfaces and GPU targets](docs/simulation.md) · [Custom rollout collector](flightrl-cuda/flightrl_cuda/custom_collector.py)
+
+## How a batched step works
+
+**Aircraft are lanes in a tensor.** A batch of `E` worlds with `A` aircraft each has `E × A` lanes. The dynamics kernel assigns one CUDA thread to each active aircraft. State is indexed by component and lane, so adjacent threads read the same component for adjacent aircraft. Each thread selects its aircraft model, advances the motors and integrates the rigid body through the scheduled RK4 substeps. Worlds define which aircraft can interact. [Dynamics kernel](flightlib-cuda/src/dynamics.cu) · [Device storage](flightlib-cuda/src/runtime.cu)
+
+**A shared radio channel has its own unit of parallelism.** A CUDA block advances one medium's timeline, where simultaneous transmissions compete for airtime. Separate media can advance in parallel. The receiver stage writes outcomes to preallocated inboxes indexed by world, receiver and subscription. The number of subscribed sources per receiver controls inbox size. [Shared channel scheduler](flightlib-cuda/src/shared_channel.cu) · [Receiver tensor layout](tools/transport/resident_channel.md)
+
+**Python borrows device storage.** A controller writes commands into persistent tensors, replays the captured step, and consumes the resulting state or inbox on the GPU. Callers can compose the step with their own CUDA graph, reset selected lanes, or request a host snapshot for logging. [Core example](flightlib-cuda/python/examples/core.py) · [State, timing and ownership](docs/simulation.md#state-and-timing)
+
 ## Flight dynamics and control
 
-Each aircraft has a motor model, body-rate controller and rigid-body RK4 integrator. The CPU/CUDA trajectory tests compare all 25 state components and motor outputs across seven aircraft models and control periods of 6.125–50 ms. Benchmarks below use an RTX 5070 Ti and Ryzen 7 9800X3D. One transition advances one aircraft by one control interval. [Trajectory tests](flightlib-cuda/tests/dynamics_test.cpp) · [CPU comparison and chart data](tools/rl_comparison/README.md)
+Each aircraft has a motor model, body-rate controller and rigid-body RK4 integrator. The CPU/CUDA trajectory tests compare all 25 state components and motor outputs across seven aircraft models and control periods of 6.125–50 ms. One transition advances one aircraft by one control interval. [Trajectory tests](flightlib-cuda/tests/dynamics_test.cpp) · [CPU comparison and chart data](tools/rl_comparison/README.md)
 
 | Workload | CUDA transitions/s | CPU transitions/s (16 threads) |
 | --- | ---: | ---: |
@@ -40,6 +60,8 @@ Each column advances 1,000 aircraft by 10 ms of simulated time. The world layout
 | 8 senders, 1 offer each, zero sampled loss | 62.9 / 69.6 | 30.7 / 31.7 |
 | 8 senders, 3 offers each, ordinary 10% loss sampler | 148.5 / 161.8 | 51.2 / 51.4 |
 | Same traffic and loss probability, five-bit receiver history enabled | 149.5 / 163.8 | 51.2 / 53.2 |
+
+![Median GPU step time with networking disabled, one or eight broadcasters, and three-copy traffic in two world layouts. The table above also reports p95.](docs/figures/network-step-cost.png)
 
 In the single-world, three-offer comparison, enabling receiver history raised the median by 1.0 µs and total native arena storage from 2.48 to 8.53 MB. Calibrating one link from eight pilot updates took 0.59 ms median on the CPU, outside the GPU step and excluding upload. [Calibration method and cost](tools/transport/history_transfer.md)
 
@@ -84,17 +106,9 @@ The single-aircraft ROS 2 bridge publishes stamped sensor data and simulation ti
 | Camera off | 3.73–3.76× | 1.21–1.22 ms |
 | 256×192 RGB at 50 Hz | 2.79–2.81× | 1.62–1.66 ms |
 
-## Install
+## Benchmark setup
 
-From this checkout, start Docker Compose on a machine with an NVIDIA GPU visible to Linux containers.
-
-```sh
-docker compose up -d --build dev
-docker compose exec -T dev bash scripts/install-headless.sh --with-rl
-docker compose exec -T dev /build/flightlib-cuda-python/bin/python -m flightrl_cuda.custom_collector
-```
-
-Omit `--with-rl` for the standalone simulator. [Core Python example](flightlib-cuda/python/examples/core.py) · [GPU targets and API](docs/simulation.md) · [Newton camera](tools/newton/README.md) · [ROS 2](tools/ros2/README.md) · [PX4 SITL](tools/px4/README.md)
+The reported performance measurements used an NVIDIA GeForce RTX 5070 Ti and AMD Ryzen 7 9800X3D. Each table identifies the workload and timing boundary. CUDA graph timings measure device execution. Collection throughput includes policy inference, and PX4 tick times include the host-side actuator exchange and logging. Hardware, world layout, receiver subscriptions and camera count all affect the result. [Benchmark methods](tools/rl_comparison/README.md) · [Validation guide](docs/validation.md)
 
 Contributions are welcome on bounded neighbor observations, measured packet-network profiles, replayable peer aircraft and sensor models with held-out recordings. Include a reproducible fixture and the quantity it checks. [Build and test guide](docs/validation.md)
 

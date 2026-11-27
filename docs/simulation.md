@@ -16,6 +16,11 @@ IMU angular rate is in rad/s and specific force in m/s² in sensor axes. In leve
 
 The Newton pinhole camera renders visible surfaces independently of authored collision proxies. RGB and optional axial depth stay on device. Asset import supports a documented subset of Unity and OpenUSD geometry. [Supported assets](../tools/newton/README.md#using-authored-scenes)
 
+
+## Packet communications
+
+Pass a `NetworkConfig` to `Environment` to advance the packet channel in the same step as the aircraft. Specify which sources each receiver listens to. Write offers before stepping, then read the receiver inbox before its storage is reused. The caller owns message payloads and can use the delivered handle to look up a payload. Start with the two-world broadcast example, then select a loss profile for your traffic. [Broadcast example and tensor contract](../tools/transport/resident_channel.md) · [Measured loss profiles](../tools/transport/history_transfer.md)
+
 ## Build targets
 
 The supported source build uses Linux x86-64, CUDA Toolkit 13.3, Python 3.12 and PyTorch 2.9.1+cu130. Compose targets the visible GPU. To embed native code for multiple devices set `FLIGHTMARE_CUDA_ARCHITECTURES=86-real;89-real;120-real` in the root `.env` before starting Compose. Those targets compiled for both native libraries; execution was qualified on SM 120 and driver 610.88. NVIDIA lists R580 as the floor for limited CUDA 13.x minor-version compatibility. Features using newer PTX can require a newer driver. [Driver compatibility](https://docs.nvidia.com/deploy/cuda-compatibility/latest/minor-version-compatibility.html)
